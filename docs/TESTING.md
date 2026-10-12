@@ -43,11 +43,11 @@ The Playwright configuration starts a dedicated API at `127.0.0.1:3101`, a Vite 
 - task capture, deliberate task-to-goal linking in the full editor, preservation of an explicitly set `goal_alignment` value, and linked-goal filtering;
 - both factual completion guards (unfinished linked task, then unfinished milestone), followed by recorded task/milestone/goal completion;
 - a server-derived current-day recovery prompt for a passed open block, neutral no-penalty wording, its explicit hand-off to Planning Studio, and the recovery-draft CTA;
-- a profile-UTC future plan around a protected commitment, including a lower-priority prerequisite scheduled before its higher-priority dependent task, an explicit feasible two-block daily-draft adjustment that preserves that order, a rejected overlap that leaves the last saved schedule unchanged, and plan approval;
+- a profile-UTC future plan with a 15-minute transition buffer around a protected commitment, including a lower-priority prerequisite scheduled before its higher-priority dependent task, a rejected too-tight two-block adjustment that leaves the saved draft untouched, a feasible two-block adjustment that preserves the buffer/order, a rejected fixed-commitment overlap, and plan approval;
 - a 90-minute lower-priority prerequisite deferred across fragmented remaining capacity, plus its higher-priority dependent task separately deferred with the factual dependency explanation; the planner does not force either task into the day, and Task Workspace confirms both remain actionable with their dependency link intact;
 - linked focus-session start, active reload, pause, paused reload with frozen persisted time, resume, and recorded completion, while confirming the linked task is not silently completed;
 - a non-UTC (`America/New_York`) calendar flow that rejects both a spring-forward nonexistent time and a fall-back ambiguous time without creating a commitment;
-- Axe scans of the account-creation screen, recovery-prompt dashboard, Schedule & Capacity, Planning Studio in its capacity/dependency-deferred and rejected-conflict states, Focus Studio, and completed authenticated goal workspace, without rule suppression.
+- Axe scans of the account-creation screen, recovery-prompt dashboard, Schedule & Capacity, Planning Studio in its capacity/dependency-deferred, transition-buffer-rejected, and fixed-conflict states, Focus Studio, and completed authenticated goal workspace, without rule suppression.
 
 Run it after Chromium is available:
 
@@ -89,7 +89,7 @@ npm run build
 npm audit --audit-level=moderate
 ```
 
-Run all available checks before describing a code change as verified. The prior two-test Chromium browser suite and its expanded four-test visual/semantic suite passed on 2026-10-12, including clean GitHub-hosted Chromium CI run `38249868995`. The current seven-test browser suite adds recovery, protected-capacity planning with dependency sequencing and honest capacity/dependency deferrals, rejected-conflict preservation, active/paused focus reload persistence, and non-UTC daylight-saving error coverage; its latest result is recorded in `docs/IMPLEMENTATION_STATUS.md`. Rerun the appropriate suite after environment or code changes.
+Run all available checks before describing a code change as verified. The prior two-test Chromium browser suite and its expanded four-test visual/semantic suite passed on 2026-10-12, including clean GitHub-hosted Chromium CI run `38249868995`. The current seven-test browser suite adds recovery, protected-capacity planning with dependency sequencing, transition-buffer protection, and honest capacity/dependency deferrals, rejected-conflict preservation, active/paused focus reload persistence, and non-UTC daylight-saving error coverage; its latest result is recorded in `docs/IMPLEMENTATION_STATUS.md`. Rerun the appropriate suite after environment or code changes.
 
 ## Manual smoke workflow
 
@@ -116,7 +116,7 @@ No claim is made for the following until tests and supported environments are ad
 
 - manual screen-reader walkthroughs and a full visual accessibility audit across all routes/breakpoints (focused account/goals keyboard, Axe, and visual baselines are automated; human assistive-technology validation is still blocked here);
 - email verification, password reset, account deletion/export UX;
-- broad browser E2E coverage across additional IANA zones/DST cases, dependency/buffer/capacity conflict variants, broader multi-task/dependency/recovery sequencing and deferral patterns, long-running/offline focus timing, visual/calendar states, and responsive states beyond the covered UTC planning flow, one ordered prerequisite/dependent pair, one fragmented-capacity prerequisite/dependent deferral, one protected-commitment conflict, active/paused reloads, and `America/New_York` DST rejection;
+- broad browser E2E coverage across additional IANA zones/DST cases, additional dependency/buffer/capacity conflict variants, broader multi-task/dependency/recovery sequencing and deferral patterns, long-running/offline focus timing, visual/calendar states, and responsive states beyond the covered UTC planning flow, one ordered prerequisite/dependent pair, one 15-minute transition-buffer rejection, one fragmented-capacity prerequisite/dependent deferral, one protected-commitment conflict, active/paused reloads, and `America/New_York` DST rejection;
 - production cookie/proxy/CORS/CSP deployment configuration;
 - external calendar authorization;
 - LLM provider timeout/schema/privacy behavior;

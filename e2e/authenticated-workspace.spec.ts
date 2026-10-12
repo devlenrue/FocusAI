@@ -172,7 +172,7 @@ test.describe("authenticated workspace browser flows", () => {
     ).toBeVisible();
   });
 
-  test("preserves plan history, dependency ordering/deferrals, and focus reloads", async ({
+  test("preserves plan history, transition buffers, dependency behavior, and focus reloads", async ({
     page,
   }, testInfo) => {
     test.slow();
@@ -194,8 +194,8 @@ test.describe("authenticated workspace browser flows", () => {
 
     await page.getByLabel("Time zone").fill("UTC");
     await page.getByLabel("Workday starts").fill("09:00");
-    await page.getByLabel("Workday ends").fill("11:00");
-    await page.getByLabel("Transition buffer").fill("0");
+    await page.getByLabel("Workday ends").fill("11:15");
+    await page.getByLabel("Transition buffer").fill("15");
     await page.getByRole("button", { name: "Save preferences" }).click();
     await expect(
       page.getByText(
@@ -284,7 +284,7 @@ test.describe("authenticated workspace browser flows", () => {
     await expect(page.getByText("SCHEDULE DRAFT")).toBeVisible();
     const capacityCard = page.locator(".plan-capacity-card");
     await expect(capacityCard.getByText("1h", { exact: true })).toBeVisible();
-    await expect(capacityCard).toContainText("of 1h 30m available");
+    await expect(capacityCard).toContainText("of 1h 45m available");
     const timeline = page.locator(".plan-timeline");
     await expect(
       timeline.getByRole("heading", { name: taskTitle, exact: true }),
@@ -379,6 +379,46 @@ test.describe("authenticated workspace browser flows", () => {
     await scheduledDependentTaskStart.fill(`${planningDate}T10:30`);
     await plannedTaskStart.fill(`${planningDate}T10:00`);
     await page.getByRole("button", { name: "Save schedule" }).click();
+    await expect(page.getByRole("alert")).toContainText(
+      `Keep “${scheduledDependentTaskTitle}” after “${taskTitle}” with the 15-minute transition buffer.`,
+    );
+    await expectNoAxeViolations(page);
+
+    const bufferRejectedPlan = (await browserApi(
+      page,
+      `/plans?planDate=${planningDate}`,
+      "GET",
+    )) as {
+      status: number;
+      payload: {
+        plan: {
+          scheduleEditedAt: string | null;
+          blocks: Array<{ taskId: string | null; startLocal: string }>;
+        } | null;
+      };
+    };
+    expect(bufferRejectedPlan.status).toBe(200);
+    expect(bufferRejectedPlan.payload.plan?.scheduleEditedAt).toBeNull();
+    expect(bufferRejectedPlan.payload.plan?.blocks).toEqual([
+      expect.objectContaining({
+        taskId: plannedTask.id,
+        startLocal: `${planningDate}T09:00`,
+      }),
+      expect.objectContaining({
+        taskId: scheduledDependentTask.payload.id,
+        startLocal: `${planningDate}T10:00`,
+      }),
+    ]);
+    await page.getByRole("button", { name: "Discard" }).click();
+
+    await page.getByRole("button", { name: "Edit schedule" }).click();
+    await expect(plannedTaskStart).toHaveValue(`${planningDate}T09:00`);
+    await expect(scheduledDependentTaskStart).toHaveValue(
+      `${planningDate}T10:00`,
+    );
+    await scheduledDependentTaskStart.fill(`${planningDate}T10:45`);
+    await plannedTaskStart.fill(`${planningDate}T10:00`);
+    await page.getByRole("button", { name: "Save schedule" }).click();
     await expect(
       page.getByText(
         "Your reviewed schedule changes were saved. Feasibility was checked again before anything moved.",
@@ -422,7 +462,7 @@ test.describe("authenticated workspace browser flows", () => {
       }),
       expect.objectContaining({
         taskId: scheduledDependentTask.payload.id,
-        startLocal: `${planningDate}T10:30`,
+        startLocal: `${planningDate}T10:45`,
       }),
     ]);
     await page.getByRole("button", { name: "Discard" }).click();
