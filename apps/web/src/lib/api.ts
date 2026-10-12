@@ -181,6 +181,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  updatePlanSchedule: (
+    planId: string,
+    input: { blocks: Array<{ id: string; startLocal: string }> },
+  ) =>
+    request<Plan>(`/plans/${planId}/blocks`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
   acceptPlan: (planId: string) =>
     request<Plan>(`/plans/${planId}/accept`, { method: "POST" }),
   getActiveFocus: () =>

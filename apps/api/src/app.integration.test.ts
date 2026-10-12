@@ -324,6 +324,231 @@ describe("FocusAI authenticated API", () => {
     ).toEqual([expect.objectContaining({ id: taskId })]);
   });
 
+  it("lets an owner review and save a feasible draft schedule without rewriting accepted history", async () => {
+    const asha = await register("Asha", "asha@example.com");
+    const ren = await register("Ren", "ren@example.com");
+
+    const prerequisiteResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/tasks",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        title: "Schedule prerequisite",
+        priority: "critical",
+        impact: 5,
+        estimateMinutes: 20,
+      },
+    });
+    const prerequisite = prerequisiteResponse.json() as { id: string };
+    const dependentResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/tasks",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        title: "Schedule dependent",
+        priority: "high",
+        impact: 4,
+        estimateMinutes: 20,
+        dependencies: [prerequisite.id],
+      },
+    });
+    const dependent = dependentResponse.json() as { id: string };
+    const independentResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/tasks",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        title: "Schedule independent",
+        priority: "medium",
+        estimateMinutes: 20,
+      },
+    });
+    const independent = independentResponse.json() as { id: string };
+
+    const generated = await app.inject({
+      method: "POST",
+      url: "/api/v1/plans/generate",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        planDate: "2026-10-12",
+        readiness: "steady",
+        now: "2026-10-12T08:00:00.000Z",
+        availability: [
+          {
+            startAt: "2026-10-12T09:00:00.000Z",
+            endAt: "2026-10-12T11:00:00.000Z",
+          },
+        ],
+      },
+    });
+    expect(generated.statusCode).toBe(201);
+    const draft = generated.json() as {
+      id: string;
+      canEditSchedule: boolean;
+      scheduleEditedAt: string | null;
+      blocks: Array<{
+        id: string;
+        taskId: string;
+        startAt: string;
+        startLocal: string;
+      }>;
+    };
+    expect(draft.canEditSchedule).toBe(true);
+    expect(draft.scheduleEditedAt).toBeNull();
+    expect(draft.blocks).toHaveLength(3);
+    const blockForTask = new Map(
+      draft.blocks.map((block) => [block.taskId, block]),
+    );
+    const prerequisiteBlock = blockForTask.get(prerequisite.id);
+    const dependentBlock = blockForTask.get(dependent.id);
+    const independentBlock = blockForTask.get(independent.id);
+    if (!prerequisiteBlock || !dependentBlock || !independentBlock) {
+      throw new Error("Expected all planned task blocks.");
+    }
+
+    const reviewedPositions = [
+      { id: prerequisiteBlock.id, startLocal: "2026-10-12T09:00" },
+      { id: independentBlock.id, startLocal: "2026-10-12T09:30" },
+      { id: dependentBlock.id, startLocal: "2026-10-12T10:00" },
+    ];
+    const renCannotMove = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/plans/${draft.id}/blocks`,
+      headers: authHeaders(ren.cookies),
+      payload: { blocks: reviewedPositions },
+    });
+    expect(renCannotMove.statusCode).toBe(404);
+
+    const incompleteSchedule = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/plans/${draft.id}/blocks`,
+      headers: authHeaders(asha.cookies),
+      payload: { blocks: reviewedPositions.slice(0, 1) },
+    });
+    expect(incompleteSchedule.statusCode).toBe(409);
+
+    const saved = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/plans/${draft.id}/blocks`,
+      headers: authHeaders(asha.cookies),
+      payload: { blocks: reviewedPositions },
+    });
+    expect(saved.statusCode).toBe(200);
+    const savedDraft = saved.json() as {
+      scheduleEditedAt: string | null;
+      blocks: Array<{ taskId: string; startAt: string; startLocal: string }>;
+    };
+    expect(savedDraft.scheduleEditedAt).toBeTruthy();
+    expect(savedDraft.blocks.map((block) => block.taskId)).toEqual([
+      prerequisite.id,
+      independent.id,
+      dependent.id,
+    ]);
+    expect(savedDraft.blocks.map((block) => block.startLocal)).toEqual([
+      "2026-10-12T09:00",
+      "2026-10-12T09:30",
+      "2026-10-12T10:00",
+    ]);
+
+    const changedPreferences = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/preferences",
+      headers: authHeaders(asha.cookies),
+      payload: { transitionMinutes: 15 },
+    });
+    expect(changedPreferences.statusCode).toBe(200);
+    const preferenceChangedPlan = await app.inject({
+      method: "GET",
+      url: "/api/v1/plans?planDate=2026-10-12",
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(
+      (preferenceChangedPlan.json() as { plan: { canEditSchedule: boolean } })
+        .plan.canEditSchedule,
+    ).toBe(false);
+    const preferenceChangedCannotMove = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/plans/${draft.id}/blocks`,
+      headers: authHeaders(asha.cookies),
+      payload: { blocks: reviewedPositions },
+    });
+    expect(preferenceChangedCannotMove.statusCode).toBe(409);
+    const restoredPreferences = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/preferences",
+      headers: authHeaders(asha.cookies),
+      payload: { transitionMinutes: 10 },
+    });
+    expect(restoredPreferences.statusCode).toBe(200);
+
+    const dependencyViolation = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/plans/${draft.id}/blocks`,
+      headers: authHeaders(asha.cookies),
+      payload: {
+        blocks: [
+          { id: dependentBlock.id, startLocal: "2026-10-12T09:00" },
+          { id: prerequisiteBlock.id, startLocal: "2026-10-12T09:30" },
+          { id: independentBlock.id, startLocal: "2026-10-12T10:00" },
+        ],
+      },
+    });
+    expect(dependencyViolation.statusCode).toBe(409);
+
+    const currentPlan = await app.inject({
+      method: "GET",
+      url: "/api/v1/plans?planDate=2026-10-12",
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(
+      (
+        currentPlan.json() as {
+          plan: { blocks: Array<{ taskId: string; startLocal: string }> };
+        }
+      ).plan.blocks.map((block) => block.taskId),
+    ).toEqual([prerequisite.id, independent.id, dependent.id]);
+
+    const commitment = await app.inject({
+      method: "POST",
+      url: "/api/v1/calendar-events",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        title: "Late fixed review",
+        startLocal: "2026-10-12T10:30",
+        endLocal: "2026-10-12T11:00",
+        isFixed: true,
+      },
+    });
+    expect(commitment.statusCode).toBe(201);
+    const commitmentViolation = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/plans/${draft.id}/blocks`,
+      headers: authHeaders(asha.cookies),
+      payload: {
+        blocks: [
+          { id: prerequisiteBlock.id, startLocal: "2026-10-12T09:00" },
+          { id: independentBlock.id, startLocal: "2026-10-12T10:00" },
+          { id: dependentBlock.id, startLocal: "2026-10-12T10:30" },
+        ],
+      },
+    });
+    expect(commitmentViolation.statusCode).toBe(409);
+
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/api/v1/plans/${draft.id}/accept`,
+      headers: authHeaders(asha.cookies),
+    });
+    expect(accepted.statusCode).toBe(200);
+    const acceptedCannotMove = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/plans/${draft.id}/blocks`,
+      headers: authHeaders(asha.cookies),
+      payload: { blocks: reviewedPositions },
+    });
+    expect(acceptedCannotMove.statusCode).toBe(409);
+  });
+
   it("edits tasks and only creates reviewed breakdown steps that planners can act on", async () => {
     const asha = await register("Asha", "asha@example.com");
     const ren = await register("Ren", "ren@example.com");
@@ -744,6 +969,55 @@ describe("FocusAI authenticated API", () => {
       },
     });
     expect(daylightSavingGap.statusCode).toBe(409);
+
+    const daylightSavingPlan = await app.inject({
+      method: "POST",
+      url: "/api/v1/plans/generate",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        planDate: "2026-03-08",
+        readiness: "steady",
+        now: "2026-03-08T12:00:00.000Z",
+        availability: [
+          {
+            startAt: "2026-03-08T13:00:00.000Z",
+            endAt: "2026-03-08T15:00:00.000Z",
+          },
+        ],
+      },
+    });
+    expect(daylightSavingPlan.statusCode).toBe(201);
+    const daylightSavingDraft = daylightSavingPlan.json() as {
+      id: string;
+      canEditSchedule: boolean;
+      blocks: Array<{ id: string }>;
+    };
+    expect(daylightSavingDraft.canEditSchedule).toBe(true);
+    const [daylightSavingBlock] = daylightSavingDraft.blocks;
+    if (!daylightSavingBlock)
+      throw new Error("Expected an editable daylight-saving plan block.");
+    const daylightSavingSchedule = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/plans/${daylightSavingDraft.id}/blocks`,
+      headers: authHeaders(asha.cookies),
+      payload: {
+        blocks: [
+          { id: daylightSavingBlock.id, startLocal: "2026-03-08T02:30" },
+        ],
+      },
+    });
+    expect(daylightSavingSchedule.statusCode).toBe(409);
+    const daylightSavingAmbiguity = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/plans/${daylightSavingDraft.id}/blocks`,
+      headers: authHeaders(asha.cookies),
+      payload: {
+        blocks: [
+          { id: daylightSavingBlock.id, startLocal: "2026-11-01T01:30" },
+        ],
+      },
+    });
+    expect(daylightSavingAmbiguity.statusCode).toBe(409);
 
     const deleted = await app.inject({
       method: "DELETE",

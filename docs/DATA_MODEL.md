@@ -125,17 +125,17 @@ Authenticated users can create, list, update, and delete these local records thr
 
 ### `daily_plans`
 
-| Column                                  | Notes                                                                                                  |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `id`, `user_id`, `plan_date`            | Plan identity and date                                                                                 |
-| `status`                                | `draft`, `accepted`, `superseded`                                                                      |
-| `type`                                  | `daily` or `recovery`                                                                                  |
-| `readiness`                             | `low`, `steady`, `high`                                                                                |
-| `generated_at`, `accepted_at`           | Auditable timestamps; acceptance nullable                                                              |
-| `capacity_minutes`, `scheduled_minutes` | Real calculation totals                                                                                |
-| `context_json`                          | Stores structured engine explanation snapshot only; it does **not** replace normalized task/block data |
+| Column                                  | Notes                                                                                                                                                                                                              |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`, `user_id`, `plan_date`            | Plan identity and date                                                                                                                                                                                             |
+| `status`                                | `draft`, `accepted`, `superseded`                                                                                                                                                                                  |
+| `type`                                  | `daily` or `recovery`                                                                                                                                                                                              |
+| `readiness`                             | `low`, `steady`, `high`                                                                                                                                                                                            |
+| `generated_at`, `accepted_at`           | Auditable timestamps; acceptance nullable                                                                                                                                                                          |
+| `capacity_minutes`, `scheduled_minutes` | Real calculation totals                                                                                                                                                                                            |
+| `context_json`                          | Stores the structured engine explanation snapshot plus, for new daily drafts, a saved editable-schedule feasibility context and optional manual-edit timestamp; it does **not** replace normalized task/block data |
 
-A new draft supersedes earlier drafts for the same owned user/date. Accepting a plan supersedes any other accepted plan for that date.
+A new draft supersedes earlier drafts for the same owned user/date. Accepting a plan supersedes any other accepted plan for that date. New daily drafts persist their resolved availability, profile-zone/workday/transition settings in `context_json` so a later whole-schedule edit can be checked without guessing. Existing plans keep their prior context and history; a legacy draft without this metadata is intentionally read-only until regenerated. Recovery drafts do not expose manual movement because recalculation is the honest remaining-day workflow.
 
 ### `scheduled_blocks`
 
@@ -148,7 +148,7 @@ A new draft supersedes earlier drafts for the same owned user/date. Accepting a 
 | `duration_minutes`, `score` | Deterministic schedule result                                           |
 | `created_at`                | UTC ISO timestamp                                                       |
 
-The decision engine prevents generated overlap. The database does not currently use a cross-row exclusion constraint; external calendar/block editing will need a transaction-level conflict check in the production adapter.
+The decision engine prevents generated overlap. A current daily draft can now receive one explicit complete-schedule update: the repository transaction checks ownership, exact block set, saved availability, current fixed commitments, transition spacing, actionability, and dependency ordering before updating these UTC instants. Accepted/superseded plans and recovery drafts are not editable. The database does not currently use a cross-row exclusion constraint; a production adapter should retain or strengthen this transaction-level conflict check.
 
 ### `focus_sessions`
 
@@ -177,5 +177,5 @@ Formal account-deletion, export, retention, and restore workflows are not yet im
 - Persisted instants use ISO-8601 UTC text (`...Z`).
 - Each user has a validated IANA `timezone` preference; plans use that zone to determine the planning date and convert `working_day_start`/`working_day_end` into UTC availability.
 - Calendar UI values are local wall times in that preference zone. The server uses Temporal conversion and rejects a local time that is nonexistent or occurs twice during a daylight-saving transition instead of guessing.
-- Changing the preference zone is a display/planning preference change, not a rewrite of historical UTC event/plan instants. An existing commitment can appear at a different wall time after the change because its actual moment is preserved.
-- Browser locale still controls language/number presentation. Broader browser and DST E2E coverage remains future work.
+- Changing the preference zone is a display/planning preference change, not a rewrite of historical UTC event/plan instants. An existing commitment can appear at a different wall time after the change because its actual moment is preserved. A manually editable draft is conservatively rejected after a relevant planning-preference change; regenerate it instead of reinterpreting old local values.
+- Manual plan schedule inputs are profile-local `YYYY-MM-DDTHH:mm` values resolved by the API with the same Temporal/DST rejection rules as calendar events. Browser locale still controls language/number presentation. Broader browser and DST E2E coverage remains future work.

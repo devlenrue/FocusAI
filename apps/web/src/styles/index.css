@@ -2645,3 +2645,93 @@ p {
     width: 100%;
   }
 }
+
+/* reviewed manual plan scheduling */
+.schedule-edit-actions {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.schedule-edit-disclosure {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin: 17px 0 -2px;
+  padding: 11px 12px;
+  border: 1px solid rgba(83, 221, 255, 0.25);
+  border-radius: 10px;
+  color: var(--cyan-bright);
+  background: rgba(28, 137, 171, 0.1);
+}
+.schedule-edit-disclosure p {
+  margin: 0;
+  color: #c4edf5;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.schedule-edit-unavailable,
+.schedule-edited-note {
+  margin: 16px 0 -3px;
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.schedule-edited-note {
+  color: var(--violet-bright);
+}
+.plan-timeline-editing .plan-block article {
+  padding-bottom: 14px;
+}
+.block-time-editor {
+  display: flex;
+  gap: 9px;
+  align-items: end;
+  margin-top: 9px;
+}
+.block-time-editor label {
+  display: grid;
+  flex: 1;
+  gap: 5px;
+  color: var(--text-soft);
+  font-size: 9px;
+  font-weight: 800;
+}
+.block-time-editor input {
+  width: 100%;
+  min-height: 35px;
+  padding: 0 8px;
+  border: 1px solid rgba(83, 221, 255, 0.24);
+  border-radius: 7px;
+  outline: none;
+  color: var(--text);
+  color-scheme: dark;
+  background: rgba(5, 11, 19, 0.58);
+  font-size: 11px;
+}
+.block-time-editor input:focus {
+  border-color: rgba(83, 221, 255, 0.7);
+  box-shadow: 0 0 0 3px rgba(83, 221, 255, 0.09);
+}
+.block-reorder-actions {
+  display: flex;
+  gap: 5px;
+}
+.block-reorder-actions .icon-button {
+  flex-basis: 30px;
+  width: 30px;
+  height: 30px;
+}
+
+@media (max-width: 720px) {
+  .schedule-edit-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .block-time-editor {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .block-reorder-actions {
+    justify-content: flex-end;
+  }
+}

@@ -3,15 +3,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
+  ArrowDown,
+  ArrowUp,
   Check,
   CircleAlert,
   Clock3,
   Compass,
   Lightbulb,
+  Pencil,
   RefreshCw,
+  Save,
   ShieldCheck,
   Sparkles,
   WandSparkles,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
@@ -35,7 +40,24 @@ const readinessOptions: Array<{
   { value: "high", title: "High", description: "Make room for deeper work" },
 ];
 
-function Timeline({ plan, timeZone }: { plan: Plan; timeZone?: string }) {
+interface ScheduleDraftPosition {
+  id: string;
+  startLocal: string;
+}
+
+function Timeline({
+  plan,
+  timeZone,
+  scheduleDraft,
+  onChangeStart,
+  onMove,
+}: {
+  plan: Plan;
+  timeZone?: string;
+  scheduleDraft: ScheduleDraftPosition[] | null;
+  onChangeStart: (blockId: string, startLocal: string) => void;
+  onMove: (blockId: string, direction: "earlier" | "later") => void;
+}) {
   if (plan.blocks.length === 0) {
     return (
       <div className="inline-empty plan-inline-empty">
@@ -51,12 +73,27 @@ function Timeline({ plan, timeZone }: { plan: Plan; timeZone?: string }) {
     );
   }
 
+  const draftStarts = new Map(
+    scheduleDraft?.map((block) => [block.id, block.startLocal]),
+  );
+  const blocks = [...plan.blocks]
+    .map((block) => ({
+      ...block,
+      startLocal: draftStarts.get(block.id) ?? block.startLocal,
+    }))
+    .sort((left, right) => left.startLocal.localeCompare(right.startLocal));
+  const isEditing = scheduleDraft !== null;
+
   return (
-    <ol className="plan-timeline">
-      {plan.blocks.map((block, index) => (
+    <ol className={`plan-timeline ${isEditing ? "plan-timeline-editing" : ""}`}>
+      {blocks.map((block, index) => (
         <li key={block.id} className="plan-block">
           <div className="plan-time">
-            <strong>{formatClock(block.startAt, timeZone)}</strong>
+            <strong>
+              {isEditing
+                ? block.startLocal.slice(11, 16)
+                : formatClock(block.startAt, timeZone)}
+            </strong>
             <span>{formatDuration(block.durationMinutes)}</span>
           </div>
           <span className="timeline-node" aria-hidden="true">
@@ -67,11 +104,46 @@ function Timeline({ plan, timeZone }: { plan: Plan; timeZone?: string }) {
               BLOCK {String(index + 1).padStart(2, "0")}
             </span>
             <h3>{block.title}</h3>
-            <p>
-              Reserved from {formatClock(block.startAt, timeZone)} to{" "}
-              {formatClock(block.endAt, timeZone)} · scored{" "}
-              {Math.round(block.score * 100)}%
-            </p>
+            {isEditing ? (
+              <div className="block-time-editor">
+                <label>
+                  Starts in {timeZone ?? "your planning zone"}
+                  <input
+                    type="datetime-local"
+                    value={block.startLocal}
+                    onChange={(event) =>
+                      onChangeStart(block.id, event.target.value)
+                    }
+                  />
+                </label>
+                <div className="block-reorder-actions">
+                  <button
+                    className="icon-button"
+                    type="button"
+                    aria-label={`Move ${block.title} earlier in the draft`}
+                    disabled={index === 0}
+                    onClick={() => onMove(block.id, "earlier")}
+                  >
+                    <ArrowUp size={15} />
+                  </button>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    aria-label={`Move ${block.title} later in the draft`}
+                    disabled={index === blocks.length - 1}
+                    onClick={() => onMove(block.id, "later")}
+                  >
+                    <ArrowDown size={15} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p>
+                Reserved from {formatClock(block.startAt, timeZone)} to{" "}
+                {formatClock(block.endAt, timeZone)} · scored{" "}
+                {Math.round(block.score * 100)}%
+              </p>
+            )}
           </article>
         </li>
       ))}
@@ -92,6 +164,9 @@ export function PlanPage() {
       : "steady",
   );
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [scheduleDraft, setScheduleDraft] = useState<
+    ScheduleDraftPosition[] | null
+  >(null);
   const preferencesQuery = useQuery({
     queryKey: ["preferences"],
     queryFn: api.getPreferences,
@@ -128,6 +203,7 @@ export function PlanPage() {
         now: new Date().toISOString(),
       }),
     onSuccess: async (plan) => {
+      setScheduleDraft(null);
       setActionMessage(
         plan.type === "recovery"
           ? "The remaining day was recalculated from the current timestamp. Review it before committing."
@@ -142,6 +218,7 @@ export function PlanPage() {
   const acceptPlan = useMutation({
     mutationFn: api.acceptPlan,
     onSuccess: async () => {
+      setScheduleDraft(null);
       setActionMessage(
         "Plan approved. You can still regenerate it when reality changes.",
       );
@@ -151,10 +228,80 @@ export function PlanPage() {
       ]);
     },
   });
+  const saveSchedule = useMutation({
+    mutationFn: ({
+      planId,
+      blocks,
+    }: {
+      planId: string;
+      blocks: ScheduleDraftPosition[];
+    }) => api.updatePlanSchedule(planId, { blocks }),
+    onSuccess: async () => {
+      setScheduleDraft(null);
+      setActionMessage(
+        "Your reviewed schedule changes were saved. Feasibility was checked again before anything moved.",
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["plan"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+      ]);
+    },
+  });
 
   const plan = planQuery.data?.plan;
-  const isBusy = generatePlan.isPending || acceptPlan.isPending;
-  const error = generatePlan.error ?? acceptPlan.error;
+  useEffect(() => {
+    setScheduleDraft(null);
+  }, [plan?.id]);
+  const isEditingSchedule = scheduleDraft !== null;
+  const isBusy =
+    generatePlan.isPending || acceptPlan.isPending || saveSchedule.isPending;
+  const error = generatePlan.error ?? acceptPlan.error ?? saveSchedule.error;
+
+  function beginScheduleEdit(currentPlan: Plan) {
+    saveSchedule.reset();
+    setActionMessage(null);
+    setScheduleDraft(
+      currentPlan.blocks.map((block) => ({
+        id: block.id,
+        startLocal: block.startLocal,
+      })),
+    );
+  }
+
+  function changeBlockStart(blockId: string, startLocal: string) {
+    setScheduleDraft(
+      (current) =>
+        current?.map((block) =>
+          block.id === blockId ? { ...block, startLocal } : block,
+        ) ?? null,
+    );
+  }
+
+  function moveBlock(blockId: string, direction: "earlier" | "later") {
+    setScheduleDraft((current) => {
+      if (!current) return current;
+      const ordered = [...current].sort((left, right) =>
+        left.startLocal.localeCompare(right.startLocal),
+      );
+      const index = ordered.findIndex((block) => block.id === blockId);
+      const adjacentIndex = index + (direction === "earlier" ? -1 : 1);
+      const selected = ordered[index];
+      const adjacent = ordered[adjacentIndex];
+      if (!selected || !adjacent) return current;
+      return current.map((block) => {
+        if (block.id === selected.id)
+          return { ...block, startLocal: adjacent.startLocal };
+        if (block.id === adjacent.id)
+          return { ...block, startLocal: selected.startLocal };
+        return block;
+      });
+    });
+  }
+
+  function saveAdjustedSchedule() {
+    if (!plan || !scheduleDraft) return;
+    saveSchedule.mutate({ planId: plan.id, blocks: scheduleDraft });
+  }
 
   return (
     <div className="plan-page page-stack">
@@ -219,7 +366,7 @@ export function PlanPage() {
             <button
               className="button button-primary"
               type="button"
-              disabled={isBusy || !planDate}
+              disabled={isBusy || !planDate || isEditingSchedule}
               onClick={() => generatePlan.mutate({})}
             >
               <WandSparkles size={17} />
@@ -233,7 +380,7 @@ export function PlanPage() {
               <button
                 className="button button-quiet"
                 type="button"
-                disabled={isBusy}
+                disabled={isBusy || isEditingSchedule}
                 onClick={() => generatePlan.mutate({ recovery: true })}
               >
                 <RefreshCw size={16} /> Recalculate remaining day
@@ -300,7 +447,41 @@ export function PlanPage() {
                 <span className={`plan-status status-${plan.status}`}>
                   {plan.status === "accepted" ? "Approved" : "Review needed"}
                 </span>
-                {plan.status !== "accepted" && (
+                {plan.canEditSchedule && !isEditingSchedule && (
+                  <button
+                    className="button button-quiet button-small"
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => beginScheduleEdit(plan)}
+                  >
+                    <Pencil size={15} /> Edit schedule
+                  </button>
+                )}
+                {isEditingSchedule && (
+                  <div className="schedule-edit-actions">
+                    <button
+                      className="button button-quiet button-small"
+                      type="button"
+                      disabled={isBusy}
+                      onClick={() => {
+                        saveSchedule.reset();
+                        setScheduleDraft(null);
+                      }}
+                    >
+                      <X size={15} /> Discard
+                    </button>
+                    <button
+                      className="button button-primary button-small"
+                      type="button"
+                      disabled={isBusy}
+                      onClick={saveAdjustedSchedule}
+                    >
+                      <Save size={15} />
+                      {saveSchedule.isPending ? "Checking…" : "Save schedule"}
+                    </button>
+                  </div>
+                )}
+                {plan.status !== "accepted" && !isEditingSchedule && (
                   <button
                     className="button button-primary button-small"
                     type="button"
@@ -326,7 +507,39 @@ export function PlanPage() {
                 </div>
               </div>
             )}
-            <Timeline plan={plan} timeZone={timeZone} />
+            {isEditingSchedule && (
+              <div className="schedule-edit-disclosure" role="status">
+                <ShieldCheck size={16} />
+                <p>
+                  Change starts or swap adjacent start slots, then save. The API
+                  checks the complete draft against availability, fixed
+                  commitments, transition buffers, and dependencies before it
+                  moves anything.
+                </p>
+              </div>
+            )}
+            {plan.status === "draft" &&
+              plan.blocks.length > 0 &&
+              !plan.canEditSchedule && (
+                <p className="schedule-edit-unavailable">
+                  This draft cannot be manually moved. Recovery drafts, drafts
+                  created before saved feasibility context, and drafts whose
+                  planning preferences changed remain unchanged; regenerate when
+                  you need a new editable daily draft.
+                </p>
+              )}
+            {plan.scheduleEditedAt && !isEditingSchedule && (
+              <p className="schedule-edited-note">
+                This draft includes saved manual schedule adjustments.
+              </p>
+            )}
+            <Timeline
+              plan={plan}
+              timeZone={timeZone}
+              scheduleDraft={scheduleDraft}
+              onChangeStart={changeBlockStart}
+              onMove={moveBlock}
+            />
           </article>
 
           <aside className="plan-insights-stack">

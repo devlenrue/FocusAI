@@ -195,6 +195,27 @@ const planRequestSchema = z.object({
   recovery: z.boolean().optional().default(false),
 });
 
+const planScheduleUpdateSchema = z
+  .object({
+    blocks: z
+      .array(
+        z.object({
+          id: z.string().uuid(),
+          // This is interpreted in the authenticated user's saved IANA zone;
+          // the server, not the browser's machine zone, resolves the instant.
+          startLocal: localDateTimeSchema,
+        }),
+      )
+      .min(1)
+      .max(200),
+  })
+  .refine(
+    (input) =>
+      new Set(input.blocks.map((block) => block.id)).size ===
+      input.blocks.length,
+    { message: "Each schedule block may appear only once." },
+  );
+
 const preferenceUpdateSchema = z
   .object({
     timezone: timeZoneSchema.optional(),
@@ -593,6 +614,17 @@ export async function buildApp(
       const body = parse(planRequestSchema, request.body);
       const plan = plans.generate(body, context.user.id);
       return reply.code(201).send(plan);
+    },
+  );
+
+  app.patch(
+    "/api/v1/plans/:planId/blocks",
+    { preHandler: protectedWrite },
+    async (request) => {
+      const context = requireWriteAuthentication(request, auth);
+      const { planId } = parse(planIdSchema, request.params);
+      const body = parse(planScheduleUpdateSchema, request.body);
+      return plans.reschedule(planId, body.blocks, context.user.id);
     },
   );
 

@@ -108,12 +108,19 @@ export interface PlanDto {
   nextAction: EngineDailyPlan["nextAction"];
   deferred: EngineDailyPlan["deferred"];
   feasibility: EngineDailyPlan["feasibility"];
+  /** Only current daily drafts carrying a saved feasibility context are editable. */
+  canEditSchedule: boolean;
+  /** Records the latest explicit manual schedule save without altering plan generation history. */
+  scheduleEditedAt: string | null;
   blocks: Array<{
     id: string;
     taskId: string | null;
     title: string;
     startAt: string;
     endAt: string;
+    /** Wall-clock values in the requesting user's current preference time zone. */
+    startLocal: string;
+    endLocal: string;
     durationMinutes: number;
     score: number;
   }>;
@@ -209,6 +216,15 @@ interface BlockRow {
   score: number;
 }
 
+interface SchedulePosition {
+  id: string;
+  taskId: string | null;
+  title: string;
+  startAt: string;
+  endAt: string;
+  durationMinutes: number;
+}
+
 interface PreferenceRow {
   timezone: string;
   working_day_start: string;
@@ -227,11 +243,24 @@ interface EventRow {
   updated_at: string;
 }
 
+interface EditableScheduleContext {
+  version: 1;
+  availability: AvailabilityWindow[];
+  timezone: string;
+  workingDayStart: string;
+  workingDayEnd: string;
+  transitionMinutes: number;
+}
+
 interface PlanContext {
   topPriorities: EngineDailyPlan["topPriorities"];
   nextAction: EngineDailyPlan["nextAction"];
   deferred: EngineDailyPlan["deferred"];
   feasibility: EngineDailyPlan["feasibility"];
+  /** Context recorded with new drafts so manual moves can be validated safely. */
+  editableSchedule?: EditableScheduleContext;
+  /** The original engine generation timestamp is deliberately left unchanged. */
+  scheduleEditedAt?: string;
   recovery?: RecoveryPlan["recovery"];
 }
 
@@ -335,6 +364,32 @@ function parseContext(contextJson: string): PlanContext {
       },
     };
   }
+}
+
+function editableScheduleContext(
+  context: PlanContext,
+): EditableScheduleContext | null {
+  const candidate = context.editableSchedule;
+  if (
+    !candidate ||
+    candidate.version !== 1 ||
+    !Array.isArray(candidate.availability) ||
+    typeof candidate.timezone !== "string" ||
+    typeof candidate.workingDayStart !== "string" ||
+    typeof candidate.workingDayEnd !== "string" ||
+    !Number.isInteger(candidate.transitionMinutes)
+  ) {
+    return null;
+  }
+  const hasValidAvailability = candidate.availability.every(
+    (window) =>
+      typeof window?.startAt === "string" &&
+      typeof window?.endAt === "string" &&
+      Number.isFinite(Date.parse(window.startAt)) &&
+      Number.isFinite(Date.parse(window.endAt)) &&
+      Date.parse(window.endAt) > Date.parse(window.startAt),
+  );
+  return hasValidAvailability ? candidate : null;
 }
 
 export class PreferencesRepository {
@@ -1053,6 +1108,14 @@ export class PlanRepository {
       input.readiness,
       input.recovery ? "recovery" : "daily",
       userId,
+      {
+        version: 1,
+        availability,
+        timezone: preference.timezone,
+        workingDayStart: preference.workingDayStart,
+        workingDayEnd: preference.workingDayEnd,
+        transitionMinutes: preference.transitionMinutes,
+      },
     );
   }
 
@@ -1064,7 +1127,7 @@ export class PlanRepository {
        ORDER BY CASE status WHEN 'draft' THEN 0 WHEN 'accepted' THEN 1 ELSE 2 END, generated_at DESC LIMIT 1`,
       [userId, planDate],
     );
-    return row ? this.rowToPlan(row) : null;
+    return row ? this.rowToPlan(row, userId) : null;
   }
 
   accept(planId: string, userId: string): PlanDto {
@@ -1084,12 +1147,275 @@ export class PlanRepository {
         [now, planId, userId],
       );
     });
-    return this.rowToPlan({ ...row, status: "accepted", accepted_at: now });
+    return this.rowToPlan(
+      { ...row, status: "accepted", accepted_at: now },
+      userId,
+    );
+  }
+
+  /**
+   * Replaces the positions of every block in a current daily draft. The engine
+   * result remains a snapshot; this only records an explicit user adjustment
+   * after rechecking the draft's saved availability against current constraints.
+   */
+  reschedule(
+    planId: string,
+    input: Array<{ id: string; startLocal: string }>,
+    userId: string,
+  ): PlanDto {
+    return this.database.transaction(() => {
+      const row = this.database.get<PlanRow>(
+        "SELECT * FROM daily_plans WHERE id = ? AND user_id = ?",
+        [planId, userId],
+      );
+      if (!row) throw new NotFoundError("Plan not found.");
+      if (row.status !== "draft") {
+        throw new ConflictError(
+          "Only a draft can be adjusted. Accepted plans stay as historical records.",
+        );
+      }
+      if (row.type !== "daily") {
+        throw new ConflictError(
+          "Recovery drafts should be recalculated instead of manually moved.",
+        );
+      }
+
+      const context = parseContext(row.context_json);
+      const scheduleContext = editableScheduleContext(context);
+      if (!scheduleContext) {
+        throw new ConflictError(
+          "This earlier draft does not contain a saved scheduling context. Regenerate it before adjusting blocks.",
+        );
+      }
+
+      const preferences = this.preferences.get(userId);
+      this.assertSchedulePreferencesMatch(scheduleContext, preferences);
+      const existingBlocks = this.database.all<BlockRow>(
+        `SELECT id, task_id, title, start_at, end_at, duration_minutes, score
+         FROM scheduled_blocks WHERE plan_id = ? ORDER BY start_at ASC`,
+        [planId],
+      );
+      const positions = this.resolveSchedulePositions(
+        input,
+        existingBlocks,
+        preferences.timezone,
+      );
+      const commitments = this.commitmentsFor(
+        scheduleContext.availability,
+        userId,
+      );
+      this.assertScheduleIsFeasible(
+        positions,
+        scheduleContext,
+        commitments,
+        userId,
+      );
+
+      for (const position of positions) {
+        this.database.run(
+          "UPDATE scheduled_blocks SET start_at = ?, end_at = ? WHERE id = ? AND plan_id = ?",
+          [position.startAt, position.endAt, position.id, planId],
+        );
+      }
+      const editedAt = nowIso();
+      const nextContext: PlanContext = {
+        ...context,
+        scheduleEditedAt: editedAt,
+      };
+      this.database.run(
+        "UPDATE daily_plans SET context_json = ? WHERE id = ? AND user_id = ?",
+        [JSON.stringify(nextContext), planId, userId],
+      );
+      return this.rowToPlan(
+        { ...row, context_json: JSON.stringify(nextContext) },
+        userId,
+      );
+    });
   }
 
   today(userId: string): PlanDto | null {
     const timezone = this.preferences.get(userId).timezone;
     return this.latestForDate(localDateFromUtc(nowIso(), timezone), userId);
+  }
+
+  private schedulePreferencesMatch(
+    context: EditableScheduleContext,
+    preferences: UserPreferencesDto,
+  ): boolean {
+    return (
+      context.timezone === preferences.timezone &&
+      context.workingDayStart === preferences.workingDayStart &&
+      context.workingDayEnd === preferences.workingDayEnd &&
+      context.transitionMinutes === preferences.transitionMinutes
+    );
+  }
+
+  private assertSchedulePreferencesMatch(
+    context: EditableScheduleContext,
+    preferences: UserPreferencesDto,
+  ): void {
+    if (!this.schedulePreferencesMatch(context, preferences)) {
+      throw new ConflictError(
+        "Your planning preferences changed after this draft was generated. Regenerate it before moving blocks.",
+      );
+    }
+  }
+
+  private resolveSchedulePositions(
+    input: Array<{ id: string; startLocal: string }>,
+    existingBlocks: BlockRow[],
+    timezone: string,
+  ): SchedulePosition[] {
+    if (input.length !== existingBlocks.length) {
+      throw new ConflictError(
+        "Save positions for every block in the draft so the whole schedule can be checked together.",
+      );
+    }
+    const blocksById = new Map(
+      existingBlocks.map((block) => [block.id, block]),
+    );
+    const requestedIds = new Set<string>();
+    const positions: SchedulePosition[] = [];
+    for (const requested of input) {
+      if (requestedIds.has(requested.id)) {
+        throw new ConflictError(
+          "Each schedule block can be positioned only once.",
+        );
+      }
+      requestedIds.add(requested.id);
+      const block = blocksById.get(requested.id);
+      if (!block) {
+        throw new ConflictError(
+          "This schedule no longer matches the current draft.",
+        );
+      }
+      let startAt: string;
+      try {
+        startAt = utcFromLocalDateTime(requested.startLocal, timezone);
+      } catch (error) {
+        if (error instanceof LocalTimeResolutionError) {
+          throw new ConflictError(error.message);
+        }
+        throw error;
+      }
+      const start = Date.parse(startAt);
+      const end = start + block.duration_minutes * 60_000;
+      positions.push({
+        id: block.id,
+        taskId: block.task_id,
+        title: block.title,
+        startAt,
+        endAt: new Date(end).toISOString(),
+        durationMinutes: block.duration_minutes,
+      });
+    }
+    return positions.sort(
+      (left, right) => Date.parse(left.startAt) - Date.parse(right.startAt),
+    );
+  }
+
+  private assertScheduleIsFeasible(
+    positions: SchedulePosition[],
+    context: EditableScheduleContext,
+    commitments: FixedCommitment[],
+    userId: string,
+  ): void {
+    for (const position of positions) {
+      const start = Date.parse(position.startAt);
+      const end = Date.parse(position.endAt);
+      const fitsAvailability = context.availability.some((window) => {
+        const windowStart = Date.parse(window.startAt);
+        const windowEnd = Date.parse(window.endAt);
+        return start >= windowStart && end <= windowEnd;
+      });
+      if (!fitsAvailability) {
+        throw new ConflictError(
+          `“${position.title}” must stay inside this draft’s saved available time.`,
+        );
+      }
+      const conflictingCommitment = commitments.find((commitment) => {
+        const commitmentStart = Date.parse(commitment.startAt);
+        const commitmentEnd = Date.parse(commitment.endAt);
+        return start < commitmentEnd && end > commitmentStart;
+      });
+      if (conflictingCommitment) {
+        throw new ConflictError(
+          `“${position.title}” conflicts with the fixed commitment “${conflictingCommitment.title}”.`,
+        );
+      }
+    }
+
+    for (let index = 1; index < positions.length; index += 1) {
+      const previous = positions[index - 1];
+      const current = positions[index];
+      if (!previous || !current) continue;
+      const earliestNextStart =
+        Date.parse(previous.endAt) + context.transitionMinutes * 60_000;
+      if (Date.parse(current.startAt) < earliestNextStart) {
+        throw new ConflictError(
+          `Keep “${current.title}” after “${previous.title}” with the ${context.transitionMinutes}-minute transition buffer.`,
+        );
+      }
+    }
+
+    const tasks = new Map(
+      this.tasks.list(userId).map((task) => [task.id, task]),
+    );
+    const positionsByTaskId = new Map(
+      positions
+        .filter(
+          (position): position is SchedulePosition & { taskId: string } =>
+            position.taskId !== null,
+        )
+        .map((position) => [position.taskId, position]),
+    );
+    for (const position of positions) {
+      if (!position.taskId) {
+        throw new ConflictError(
+          "This draft includes a deleted task. Regenerate it before moving blocks.",
+        );
+      }
+      const task = tasks.get(position.taskId);
+      if (
+        !task ||
+        task.status === "done" ||
+        task.blocked ||
+        task.isDecomposed
+      ) {
+        throw new ConflictError(
+          `“${position.title}” is no longer an actionable task. Regenerate the draft before moving blocks.`,
+        );
+      }
+      for (const dependencyId of task.dependencies) {
+        const dependency = tasks.get(dependencyId);
+        if (!dependency) {
+          throw new ConflictError(
+            `“${position.title}” has a dependency that is no longer actionable. Regenerate the draft before moving blocks.`,
+          );
+        }
+        // A completed dependency remains satisfied even if its old metadata
+        // now describes it as blocked or a completed breakdown container.
+        if (dependency.status === "done") continue;
+        if (dependency.blocked || dependency.isDecomposed) {
+          throw new ConflictError(
+            `“${position.title}” has a dependency that is no longer actionable. Regenerate the draft before moving blocks.`,
+          );
+        }
+        const dependencyPosition = positionsByTaskId.get(dependencyId);
+        if (!dependencyPosition) {
+          throw new ConflictError(
+            `“${position.title}” needs “${dependency.title}” to be completed or scheduled first.`,
+          );
+        }
+        if (
+          Date.parse(dependencyPosition.endAt) > Date.parse(position.startAt)
+        ) {
+          throw new ConflictError(
+            `“${position.title}” must stay after its dependency “${dependency.title}”.`,
+          );
+        }
+      }
+    }
   }
 
   private defaultAvailability(
@@ -1172,6 +1498,7 @@ export class PlanRepository {
     readiness: Readiness,
     type: PlanDto["type"],
     userId: string,
+    editableSchedule: EditableScheduleContext,
   ): PlanDto {
     const id = randomUUID();
     const context: PlanContext = {
@@ -1179,6 +1506,9 @@ export class PlanRepository {
       nextAction: plan.nextAction,
       deferred: plan.deferred,
       feasibility: plan.feasibility,
+      // Recovery drafts retain their snapshot but deliberately do not expose
+      // manual movement; recalculation keeps remaining-day capacity honest.
+      ...(type === "daily" ? { editableSchedule } : {}),
       ...(type === "recovery"
         ? { recovery: (plan as RecoveryPlan).recovery }
         : {}),
@@ -1228,11 +1558,13 @@ export class PlanRepository {
       [id, userId],
     );
     if (!row) throw new NotFoundError("Plan was not persisted.");
-    return this.rowToPlan(row);
+    return this.rowToPlan(row, userId);
   }
 
-  private rowToPlan(row: PlanRow): PlanDto {
+  private rowToPlan(row: PlanRow, userId: string): PlanDto {
     const context = parseContext(row.context_json);
+    const preference = this.preferences.get(userId);
+    const scheduleContext = editableScheduleContext(context);
     const blocks = this.database.all<BlockRow>(
       `SELECT id, task_id, title, start_at, end_at, duration_minutes, score
        FROM scheduled_blocks WHERE plan_id = ? ORDER BY start_at ASC`,
@@ -1252,12 +1584,21 @@ export class PlanRepository {
       nextAction: context.nextAction,
       deferred: context.deferred,
       feasibility: context.feasibility,
+      canEditSchedule:
+        row.status === "draft" &&
+        row.type === "daily" &&
+        blocks.length > 0 &&
+        scheduleContext !== null &&
+        this.schedulePreferencesMatch(scheduleContext, preference),
+      scheduleEditedAt: context.scheduleEditedAt ?? null,
       blocks: blocks.map((block) => ({
         id: block.id,
         taskId: block.task_id,
         title: block.title,
         startAt: block.start_at,
         endAt: block.end_at,
+        startLocal: localDateTimeFromUtc(block.start_at, preference.timezone),
+        endLocal: localDateTimeFromUtc(block.end_at, preference.timezone),
         durationMinutes: block.duration_minutes,
         score: block.score,
       })),

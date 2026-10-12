@@ -106,6 +106,9 @@ export interface ScheduledBlock {
   title: string;
   startAt: string;
   endAt: string;
+  /** Wall-clock values in the user's configured planning time zone. */
+  startLocal: string;
+  endLocal: string;
   durationMinutes: number;
   score: number;
 }
@@ -136,6 +139,9 @@ export interface Plan {
     unscheduledMinutes: number;
     isFeasible: boolean;
   };
+  /** Daily drafts generated with a saved feasibility snapshot can be manually moved. */
+  canEditSchedule: boolean;
+  scheduleEditedAt: string | null;
   blocks: ScheduledBlock[];
   recovery?: {
     remainingCapacityMinutes: number;
