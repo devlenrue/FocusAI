@@ -1,0 +1,28 @@
+{
+  "name": "@focusai/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "npm run build --workspace=@focusai/decision-engine",
+    "dev": "tsx watch src/server.ts",
+    "prestart": "npm run build --workspace=@focusai/decision-engine",
+    "start": "tsx src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.0.0",
+    "@fastify/helmet": "^13.0.0",
+    "@fastify/swagger": "^9.4.0",
+    "@fastify/swagger-ui": "^6.1.2",
+    "@focusai/decision-engine": "file:../../packages/decision-engine",
+    "fastify": "^5.2.1",
+    "tsx": "^4.19.3",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.3"
+  }
+}

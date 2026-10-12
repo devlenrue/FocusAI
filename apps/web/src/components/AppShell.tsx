@@ -1,0 +1,84 @@
+import { useState } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
+import { CalendarDays, CheckSquare2, Command, LayoutDashboard, Plus, Sparkles, Timer } from 'lucide-react';
+import { FocusMark } from './FocusMark';
+import { NewTaskModal } from './NewTaskModal';
+
+const navigation = [
+  { to: '/', label: 'Command center', icon: LayoutDashboard, end: true },
+  { to: '/tasks', label: 'Task workspace', icon: CheckSquare2 },
+  { to: '/plan', label: 'Planning studio', icon: CalendarDays },
+  { to: '/focus', label: 'Focus studio', icon: Timer },
+];
+
+const titleByPath: Record<string, string> = {
+  '/': 'Command center',
+  '/tasks': 'Task workspace',
+  '/plan': 'Planning studio',
+  '/focus': 'Focus studio',
+};
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const [isCaptureOpen, setCaptureOpen] = useState(false);
+  const title = titleByPath[location.pathname] ?? 'FocusAI';
+
+  return (
+    <div className="app-shell">
+      <aside className="side-rail" aria-label="Primary navigation">
+        <div className="side-rail-top">
+          <FocusMark />
+          <span className="product-kicker">ADAPTIVE WORKSPACE</span>
+          <nav className="desktop-nav">
+            {navigation.map((item) => {
+              const Icon = item.icon;
+              return (
+                <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                  <Icon size={18} aria-hidden="true" />
+                  <span>{item.label}</span>
+                </NavLink>
+              );
+            })}
+          </nav>
+        </div>
+        <div className="rail-insight" aria-label="Local development mode">
+          <span className="rail-insight-icon"><Sparkles size={15} /></span>
+          <div>
+            <strong>Local mode</strong>
+            <p>Private to this device</p>
+          </div>
+        </div>
+      </aside>
+
+      <div className="main-frame">
+        <header className="top-bar">
+          <div className="top-bar-context">
+            <span className="top-bar-dot" aria-hidden="true" />
+            <span>{title}</span>
+          </div>
+          <div className="top-bar-actions">
+            <span className="shortcut-hint"><Command size={14} /> N</span>
+            <button className="button button-primary capture-button" type="button" onClick={() => setCaptureOpen(true)}>
+              <Plus size={17} aria-hidden="true" />
+              <span>Capture</span>
+            </button>
+          </div>
+        </header>
+        <main className="page-content">{children}</main>
+      </div>
+
+      <nav className="mobile-nav" aria-label="Mobile primary navigation">
+        {navigation.map((item) => {
+          const Icon = item.icon;
+          return (
+            <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`}>
+              <Icon size={19} aria-hidden="true" />
+              <span>{item.label.split(' ')[0]}</span>
+            </NavLink>
+          );
+        })}
+      </nav>
+      <NewTaskModal open={isCaptureOpen} onClose={() => setCaptureOpen(false)} />
+    </div>
+  );
+}

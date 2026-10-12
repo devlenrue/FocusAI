@@ -1,0 +1,20 @@
+# Dependencies and generated builds
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local data and logs
+apps/api/data/*.db
+apps/api/data/*.db-*
+*.log
+
+# OS/editor artifacts
+.DS_Store
+.idea/
+.vscode/
