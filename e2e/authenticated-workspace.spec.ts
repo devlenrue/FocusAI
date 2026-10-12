@@ -172,7 +172,7 @@ test.describe("authenticated workspace browser flows", () => {
     ).toBeVisible();
   });
 
-  test("preserves plan history, dependency deferrals, and focus reloads", async ({
+  test("preserves plan history, dependency ordering/deferrals, and focus reloads", async ({
     page,
   }, testInfo) => {
     test.slow();
@@ -181,8 +181,9 @@ test.describe("authenticated workspace browser flows", () => {
     const planningDate = addUtcDays(new Date().toISOString().slice(0, 10), 2);
     const commitmentTitle = `E2E protected time ${accountSuffix(testInfo)}`;
     const taskTitle = `E2E planned focus task ${accountSuffix(testInfo)}`;
+    const scheduledDependentTaskTitle = `E2E scheduled dependent task ${accountSuffix(testInfo)}`;
     const deferredTaskTitle = `E2E deferred task ${accountSuffix(testInfo)}`;
-    const dependentTaskTitle = `E2E dependent task ${accountSuffix(testInfo)}`;
+    const deferredDependentTaskTitle = `E2E deferred dependent task ${accountSuffix(testInfo)}`;
 
     await desktopNavigation(page)
       .getByRole("link", { name: "Schedule & capacity" })
@@ -237,6 +238,31 @@ test.describe("authenticated workspace browser flows", () => {
     await captureDialog.getByRole("button", { name: "Capture task" }).click();
     await expect(captureDialog).toBeHidden();
 
+    const capturedTasks = (await browserApi(page, "/tasks", "GET")) as {
+      status: number;
+      payload: { items: Array<{ id: string; title: string }> };
+    };
+    expect(capturedTasks.status).toBe(200);
+    const plannedTask = capturedTasks.payload.items.find(
+      (task) => task.title === taskTitle,
+    );
+    expect(plannedTask).toEqual(
+      expect.objectContaining({ id: expect.any(String) }),
+    );
+    if (!plannedTask) throw new Error("Expected the captured planned task.");
+
+    const scheduledDependentTask = await browserApi(page, "/tasks", "POST", {
+      title: scheduledDependentTaskTitle,
+      estimateMinutes: 30,
+      priority: "critical",
+      impact: 5,
+      dependencies: [plannedTask.id],
+    });
+    expect(scheduledDependentTask.status).toBe(201);
+    expect(scheduledDependentTask.payload).toEqual(
+      expect.objectContaining({ id: expect.any(String) }),
+    );
+
     const deferredTask = await browserApi(page, "/tasks", "POST", {
       title: deferredTaskTitle,
       estimateMinutes: 90,
@@ -257,10 +283,22 @@ test.describe("authenticated workspace browser flows", () => {
     await page.getByRole("button", { name: "Generate plan" }).click();
     await expect(page.getByText("SCHEDULE DRAFT")).toBeVisible();
     const capacityCard = page.locator(".plan-capacity-card");
-    await expect(capacityCard).toContainText("30m");
+    await expect(capacityCard.getByText("1h", { exact: true })).toBeVisible();
     await expect(capacityCard).toContainText("of 1h 30m available");
-    await expect(page.getByRole("heading", { name: taskTitle })).toBeVisible();
     const timeline = page.locator(".plan-timeline");
+    await expect(
+      timeline.getByRole("heading", { name: taskTitle, exact: true }),
+    ).toBeVisible();
+    await expect(
+      timeline.getByRole("heading", {
+        name: scheduledDependentTaskTitle,
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(await timeline.getByRole("heading").allTextContents()).toEqual([
+      taskTitle,
+      scheduledDependentTaskTitle,
+    ]);
     await expect(
       timeline.getByRole("heading", {
         name: deferredTaskTitle,
@@ -280,20 +318,24 @@ test.describe("authenticated workspace browser flows", () => {
     ).toBeVisible();
     await expectNoAxeViolations(page);
 
-    const dependentTask = await browserApi(page, "/tasks", "POST", {
-      title: dependentTaskTitle,
+    const deferredDependentTask = await browserApi(page, "/tasks", "POST", {
+      title: deferredDependentTaskTitle,
       estimateMinutes: 30,
       priority: "critical",
       impact: 5,
       dependencies: [deferredTask.payload.id],
     });
-    expect(dependentTask.status).toBe(201);
+    expect(deferredDependentTask.status).toBe(201);
     await page.getByRole("button", { name: "Regenerate plan" }).click();
     await expect(
       page.getByText(
         "A fresh draft is ready. Nothing changes until you approve it.",
       ),
     ).toBeVisible();
+    expect(await timeline.getByRole("heading").allTextContents()).toEqual([
+      taskTitle,
+      scheduledDependentTaskTitle,
+    ]);
     await expect(
       timeline.getByRole("heading", {
         name: deferredTaskTitle,
@@ -302,13 +344,13 @@ test.describe("authenticated workspace browser flows", () => {
     ).toHaveCount(0);
     await expect(
       timeline.getByRole("heading", {
-        name: dependentTaskTitle,
+        name: deferredDependentTaskTitle,
         exact: true,
       }),
     ).toHaveCount(0);
     const dependencyDeferredItem = deferredCard
       .locator("li")
-      .filter({ hasText: dependentTaskTitle });
+      .filter({ hasText: deferredDependentTaskTitle });
     await expect(dependencyDeferredItem).toContainText(
       "Its dependencies form a cycle or could not be scheduled before it.",
     );
@@ -318,9 +360,24 @@ test.describe("authenticated workspace browser flows", () => {
     await expectNoAxeViolations(page);
 
     await page.getByRole("button", { name: "Edit schedule" }).click();
-    const draftStart = page.getByLabel("Starts in UTC");
-    await expect(draftStart).toHaveValue(`${planningDate}T09:00`);
-    await draftStart.fill(`${planningDate}T10:00`);
+    const plannedTaskBlock = timeline.locator(".plan-block").filter({
+      has: page.getByRole("heading", { name: taskTitle, exact: true }),
+    });
+    const scheduledDependentTaskBlock = timeline.locator(".plan-block").filter({
+      has: page.getByRole("heading", {
+        name: scheduledDependentTaskTitle,
+        exact: true,
+      }),
+    });
+    const plannedTaskStart = plannedTaskBlock.getByLabel("Starts in UTC");
+    const scheduledDependentTaskStart =
+      scheduledDependentTaskBlock.getByLabel("Starts in UTC");
+    await expect(plannedTaskStart).toHaveValue(`${planningDate}T09:00`);
+    await expect(scheduledDependentTaskStart).toHaveValue(
+      `${planningDate}T10:00`,
+    );
+    await scheduledDependentTaskStart.fill(`${planningDate}T10:30`);
+    await plannedTaskStart.fill(`${planningDate}T10:00`);
     await page.getByRole("button", { name: "Save schedule" }).click();
     await expect(
       page.getByText(
@@ -332,7 +389,7 @@ test.describe("authenticated workspace browser flows", () => {
     ).toBeVisible();
 
     await page.getByRole("button", { name: "Edit schedule" }).click();
-    const conflictingStart = page.getByLabel("Starts in UTC");
+    const conflictingStart = plannedTaskBlock.getByLabel("Starts in UTC");
     await expect(conflictingStart).toHaveValue(`${planningDate}T10:00`);
     await conflictingStart.fill(`${planningDate}T09:30`);
     await page.getByRole("button", { name: "Save schedule" }).click();
@@ -350,7 +407,7 @@ test.describe("authenticated workspace browser flows", () => {
       payload: {
         plan: {
           scheduleEditedAt: string | null;
-          blocks: Array<{ startLocal: string }>;
+          blocks: Array<{ taskId: string | null; startLocal: string }>;
         } | null;
       };
     };
@@ -359,7 +416,14 @@ test.describe("authenticated workspace browser flows", () => {
       expect.any(String),
     );
     expect(persistedPlan.payload.plan?.blocks).toEqual([
-      expect.objectContaining({ startLocal: `${planningDate}T10:00` }),
+      expect.objectContaining({
+        taskId: plannedTask.id,
+        startLocal: `${planningDate}T10:00`,
+      }),
+      expect.objectContaining({
+        taskId: scheduledDependentTask.payload.id,
+        startLocal: `${planningDate}T10:30`,
+      }),
     ]);
     await page.getByRole("button", { name: "Discard" }).click();
 
@@ -446,15 +510,26 @@ test.describe("authenticated workspace browser flows", () => {
         name: `Mark ${deferredTaskTitle} complete`,
       }),
     ).toBeVisible();
-    const dependentTaskRow = page.locator(".task-row").filter({
+    const scheduledDependentTaskRow = page.locator(".task-row").filter({
       has: page.getByRole("heading", {
-        name: dependentTaskTitle,
+        name: scheduledDependentTaskTitle,
         exact: true,
       }),
     });
     await expect(
-      dependentTaskRow.getByRole("button", {
-        name: `Mark ${dependentTaskTitle} complete`,
+      scheduledDependentTaskRow.getByRole("button", {
+        name: `Mark ${scheduledDependentTaskTitle} complete`,
+      }),
+    ).toBeVisible();
+    const deferredDependentTaskRow = page.locator(".task-row").filter({
+      has: page.getByRole("heading", {
+        name: deferredDependentTaskTitle,
+        exact: true,
+      }),
+    });
+    await expect(
+      deferredDependentTaskRow.getByRole("button", {
+        name: `Mark ${deferredDependentTaskTitle} complete`,
       }),
     ).toBeVisible();
     const persistedTasks = (await browserApi(page, "/tasks", "GET")) as {
@@ -470,7 +545,17 @@ test.describe("authenticated workspace browser flows", () => {
     expect(persistedTasks.status).toBe(200);
     expect(
       persistedTasks.payload.items.find(
-        (task) => task.title === dependentTaskTitle,
+        (task) => task.title === scheduledDependentTaskTitle,
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        status: "todo",
+        dependencies: [plannedTask.id],
+      }),
+    );
+    expect(
+      persistedTasks.payload.items.find(
+        (task) => task.title === deferredDependentTaskTitle,
       ),
     ).toEqual(
       expect.objectContaining({
