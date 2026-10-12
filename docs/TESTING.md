@@ -50,7 +50,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The GitHub Actions `Browser E2E and accessibility` job installs Chromium with system dependencies and uploads Playwright diagnostics when a browser test fails. The default Playwright browser cache is absent in the current Arena sandbox, but the suite passed locally against a temporary compatible Chromium executable supplied through `PLAYWRIGHT_EXECUTABLE_PATH`; the exact command and result are recorded in `docs/IMPLEMENTATION_STATUS.md`.
+The GitHub Actions `Browser E2E and accessibility` job installs Chromium with system dependencies and uploads Playwright diagnostics when a browser test fails. The default Playwright browser cache is absent in the current Arena sandbox, but the suite passed locally against a temporary compatible Chromium executable supplied through `PLAYWRIGHT_EXECUTABLE_PATH` and in GitHub Actions run `38246192999`; exact commands and results are recorded in `docs/IMPLEMENTATION_STATUS.md`.
 
 ## Commands
 
@@ -63,7 +63,7 @@ npm run build
 npm audit --audit-level=moderate
 ```
 
-Run all available checks before describing a code change as verified. The normal command set and the two-test Chromium browser suite pass for the browser-verification increment on 2026-10-12, as logged in `docs/IMPLEMENTATION_STATUS.md`; the independent GitHub-hosted Chromium job remains the pending portable CI confirmation. Rerun the appropriate suite after environment or code changes.
+Run all available checks before describing a code change as verified. The normal command set and the two-test Chromium browser suite passed for the browser-verification increment on 2026-10-12, including the independent GitHub-hosted Chromium job, as logged in `docs/IMPLEMENTATION_STATUS.md`. Rerun the appropriate suite after environment or code changes.
 
 ## Manual smoke workflow
 
@@ -88,7 +88,7 @@ With `npm run dev` running:
 
 No claim is made for the following until tests and supported environments are added:
 
-- manual screen-reader walkthroughs, visual-regression baselines, and a full visual accessibility audit (Axe plus one keyboard path passed in Chromium, while the independent CI job remains pending);
+- manual screen-reader walkthroughs, visual-regression baselines, and a full visual accessibility audit (Axe plus one keyboard path passed in local and GitHub-hosted Chromium);
 - email verification, password reset, account deletion/export UX;
 - browser E2E coverage across IANA zones, ambiguous DST fall-back times, planning, focus, visual/calendar accessibility, and responsive visual states;
 - production cookie/proxy/CORS/CSP deployment configuration;
