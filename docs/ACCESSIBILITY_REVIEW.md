@@ -15,7 +15,7 @@
 - the mobile navigation landmark and desktop-rail visibility boundary;
 - focus entry, tab wrapping, Escape dismissal, and focus return for quick capture; the task editor shares the same focus-management hook and is exercised by the authenticated workflow;
 - Axe scans of populated Goals & Milestones at desktop and mobile widths;
-- Axe scans of authenticated Schedule & Capacity, Planning Studio during a rejected schedule-conflict state, and Focus Studio after real active/paused reloads plus its start/pause/resume/completion lifecycle;
+- Axe scans of authenticated Schedule & Capacity, Planning Studio with factual capacity-deferral and rejected schedule-conflict states, and Focus Studio after real active/paused reloads plus its start/pause/resume/completion lifecycle;
 - six checked-in Chromium screenshots, covering account access plus the populated goals surface and goal card at both breakpoints.
 
 Visual snapshot paths are deliberately versioned rather than ignored:

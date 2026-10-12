@@ -119,7 +119,7 @@ Until this exists, the product must not say an LLM integration is connected.
 - dependency order is respected even when the dependent item has a higher score;
 - the configurable 20% recovery cap applies in recovery mode.
 
-The API integration test additionally verifies a recovery request derives a 120-minute remaining-day window for a 16:00 UTC recovery in the 09:00–18:00 UTC default workday, and that a current passed block produces a read-only recovery signal which clears for an active focus session, an operative recovery plan, or a completed task.
+The API integration test additionally verifies a recovery request derives a 120-minute remaining-day window for a 16:00 UTC recovery in the 09:00–18:00 UTC default workday, and that a current passed block produces a read-only recovery signal which clears for an active focus session, an operative recovery plan, or a completed task. The Chromium workflow also verifies that a 90-minute low-priority task spanning two fragmented remaining intervals is shown as an explicit capacity deferral—not forced into the day or silently changed—and remains actionable in the Task Workspace.
 
 ## Not yet modeled
 

@@ -585,7 +585,7 @@ export function PlanPage() {
               <p>
                 {plan.feasibility.isFeasible
                   ? "All currently eligible tasks fit without overlap."
-                  : `${plan.deferred.length} task${plan.deferred.length === 1 ? "" : "s"} need a deliberate decision.`}
+                  : `${plan.deferred.length} task${plan.deferred.length === 1 ? "" : "s"} ${plan.deferred.length === 1 ? "needs" : "need"} a deliberate decision.`}
               </p>
             </article>
             <article className="panel plan-priorities-card">

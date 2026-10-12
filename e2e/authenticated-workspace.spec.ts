@@ -181,6 +181,7 @@ test.describe("authenticated workspace browser flows", () => {
     const planningDate = addUtcDays(new Date().toISOString().slice(0, 10), 2);
     const commitmentTitle = `E2E protected time ${accountSuffix(testInfo)}`;
     const taskTitle = `E2E planned focus task ${accountSuffix(testInfo)}`;
+    const deferredTaskTitle = `E2E deferred task ${accountSuffix(testInfo)}`;
 
     await desktopNavigation(page)
       .getByRole("link", { name: "Schedule & capacity" })
@@ -235,6 +236,14 @@ test.describe("authenticated workspace browser flows", () => {
     await captureDialog.getByRole("button", { name: "Capture task" }).click();
     await expect(captureDialog).toBeHidden();
 
+    const deferredTask = await browserApi(page, "/tasks", "POST", {
+      title: deferredTaskTitle,
+      estimateMinutes: 90,
+      priority: "low",
+      impact: 1,
+    });
+    expect(deferredTask.status).toBe(201);
+
     await desktopNavigation(page)
       .getByRole("link", { name: "Planning studio" })
       .click();
@@ -248,6 +257,15 @@ test.describe("authenticated workspace browser flows", () => {
     await expect(capacityCard).toContainText("30m");
     await expect(capacityCard).toContainText("of 1h 30m available");
     await expect(page.getByRole("heading", { name: taskTitle })).toBeVisible();
+    const deferredCard = page.locator(".deferred-card");
+    await expect(deferredCard).toContainText("NOT FORCED IN");
+    await expect(deferredCard).toContainText(deferredTaskTitle);
+    await expect(deferredCard).toContainText(
+      "It does not fit in the remaining available time without creating a conflict.",
+    );
+    await expect(
+      page.getByText("1 task needs a deliberate decision."),
+    ).toBeVisible();
 
     await page.getByRole("button", { name: "Edit schedule" }).click();
     const draftStart = page.getByLabel("Starts in UTC");
@@ -366,6 +384,17 @@ test.describe("authenticated workspace browser flows", () => {
     });
     await expect(
       taskRow.getByRole("button", { name: `Mark ${taskTitle} complete` }),
+    ).toBeVisible();
+    const deferredTaskRow = page.locator(".task-row").filter({
+      has: page.getByRole("heading", {
+        name: deferredTaskTitle,
+        exact: true,
+      }),
+    });
+    await expect(
+      deferredTaskRow.getByRole("button", {
+        name: `Mark ${deferredTaskTitle} complete`,
+      }),
     ).toBeVisible();
   });
 

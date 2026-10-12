@@ -44,6 +44,7 @@ The Playwright configuration starts a dedicated API at `127.0.0.1:3101`, a Vite 
 - both factual completion guards (unfinished linked task, then unfinished milestone), followed by recorded task/milestone/goal completion;
 - a server-derived current-day recovery prompt for a passed open block, neutral no-penalty wording, its explicit hand-off to Planning Studio, and the recovery-draft CTA;
 - a profile-UTC future plan around a protected commitment, its resulting fixed-capacity calculation, an explicit feasible daily-draft schedule adjustment, a rejected overlap that leaves the last saved schedule unchanged, and plan approval;
+- a 90-minute lower-priority task deferred across fragmented remaining capacity, with the Planning Studio's factual **Not forced in** explanation and proof it remains an actionable task;
 - linked focus-session start, active reload, pause, paused reload with frozen persisted time, resume, and recorded completion, while confirming the linked task is not silently completed;
 - a non-UTC (`America/New_York`) calendar flow that rejects both a spring-forward nonexistent time and a fall-back ambiguous time without creating a commitment;
 - Axe scans of the account-creation screen, recovery-prompt dashboard, Schedule & Capacity, Planning Studio, Focus Studio, and completed authenticated goal workspace, without rule suppression.
@@ -88,7 +89,7 @@ npm run build
 npm audit --audit-level=moderate
 ```
 
-Run all available checks before describing a code change as verified. The prior two-test Chromium browser suite and its expanded four-test visual/semantic suite passed on 2026-10-12, including clean GitHub-hosted Chromium CI run `38249868995`. The current seven-test browser suite adds recovery, protected-capacity planning, rejected-conflict preservation, active/paused focus reload persistence, and non-UTC daylight-saving error coverage; its latest result is recorded in `docs/IMPLEMENTATION_STATUS.md`. Rerun the appropriate suite after environment or code changes.
+Run all available checks before describing a code change as verified. The prior two-test Chromium browser suite and its expanded four-test visual/semantic suite passed on 2026-10-12, including clean GitHub-hosted Chromium CI run `38249868995`. The current seven-test browser suite adds recovery, protected-capacity planning with an honest deferral, rejected-conflict preservation, active/paused focus reload persistence, and non-UTC daylight-saving error coverage; its latest result is recorded in `docs/IMPLEMENTATION_STATUS.md`. Rerun the appropriate suite after environment or code changes.
 
 ## Manual smoke workflow
 
@@ -115,7 +116,7 @@ No claim is made for the following until tests and supported environments are ad
 
 - manual screen-reader walkthroughs and a full visual accessibility audit across all routes/breakpoints (focused account/goals keyboard, Axe, and visual baselines are automated; human assistive-technology validation is still blocked here);
 - email verification, password reset, account deletion/export UX;
-- broad browser E2E coverage across additional IANA zones/DST cases, dependency/buffer/capacity conflict variants and deferrals, long-running/offline focus timing, visual/calendar states, and responsive states beyond the covered UTC planning flow, one protected-commitment conflict, active/paused reloads, and `America/New_York` DST rejection;
+- broad browser E2E coverage across additional IANA zones/DST cases, dependency/buffer/capacity conflict variants, multi-task/dependency/recovery deferrals, long-running/offline focus timing, visual/calendar states, and responsive states beyond the covered UTC planning flow, one fragmented-capacity deferral, one protected-commitment conflict, active/paused reloads, and `America/New_York` DST rejection;
 - production cookie/proxy/CORS/CSP deployment configuration;
 - external calendar authorization;
 - LLM provider timeout/schema/privacy behavior;
