@@ -4,7 +4,7 @@
 >
 > Scope: the private account-access screen; authenticated Projects/Goals & Milestones, recovery dashboard, Schedule & Capacity, Planning Studio, and Focus Studio states.
 >
-> Status: automated keyboard, semantic, Axe, responsive-layout, and visual-regression checks are implemented. The previous four-test scope passed in GitHub-hosted Chromium CI (run `38249868995`); the expanded seven-test scope, including recovery, rejected scheduling-conflict, and persisted-focus reload Axe coverage, passed locally against compatible Chromium on 2026-10-12. A human screen-reader walkthrough remains **Blocked** in this sandbox because it does not provide NVDA, VoiceOver, TalkBack, or an equivalent assistive-technology environment.
+> Status: automated keyboard, semantic, Axe, responsive-layout, and visual-regression checks are implemented. The previous four-test scope passed in GitHub-hosted Chromium CI (run `38249868995`); the expanded seven-test scope, including recovery, capacity/dependency-deferral, rejected scheduling-conflict, and persisted-focus reload Axe coverage, passed locally against compatible Chromium on 2026-10-12. A human screen-reader walkthrough remains **Blocked** in this sandbox because it does not provide NVDA, VoiceOver, TalkBack, or an equivalent assistive-technology environment.
 
 ## What is covered automatically
 
@@ -15,7 +15,7 @@
 - the mobile navigation landmark and desktop-rail visibility boundary;
 - focus entry, tab wrapping, Escape dismissal, and focus return for quick capture; the task editor shares the same focus-management hook and is exercised by the authenticated workflow;
 - Axe scans of populated Goals & Milestones at desktop and mobile widths;
-- Axe scans of authenticated Schedule & Capacity, Planning Studio with factual capacity-deferral and rejected schedule-conflict states, and Focus Studio after real active/paused reloads plus its start/pause/resume/completion lifecycle;
+- Axe scans of authenticated Schedule & Capacity, Planning Studio with factual capacity/dependency-deferral and rejected schedule-conflict states, and Focus Studio after real active/paused reloads plus its start/pause/resume/completion lifecycle;
 - six checked-in Chromium screenshots, covering account access plus the populated goals surface and goal card at both breakpoints.
 
 Visual snapshot paths are deliberately versioned rather than ignored:

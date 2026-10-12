@@ -172,7 +172,7 @@ test.describe("authenticated workspace browser flows", () => {
     ).toBeVisible();
   });
 
-  test("preserves plan history across a rejected conflict and focus reloads", async ({
+  test("preserves plan history, dependency deferrals, and focus reloads", async ({
     page,
   }, testInfo) => {
     test.slow();
@@ -182,6 +182,7 @@ test.describe("authenticated workspace browser flows", () => {
     const commitmentTitle = `E2E protected time ${accountSuffix(testInfo)}`;
     const taskTitle = `E2E planned focus task ${accountSuffix(testInfo)}`;
     const deferredTaskTitle = `E2E deferred task ${accountSuffix(testInfo)}`;
+    const dependentTaskTitle = `E2E dependent task ${accountSuffix(testInfo)}`;
 
     await desktopNavigation(page)
       .getByRole("link", { name: "Schedule & capacity" })
@@ -243,7 +244,9 @@ test.describe("authenticated workspace browser flows", () => {
       impact: 1,
     });
     expect(deferredTask.status).toBe(201);
-
+    expect(deferredTask.payload).toEqual(
+      expect.objectContaining({ id: expect.any(String) }),
+    );
     await desktopNavigation(page)
       .getByRole("link", { name: "Planning studio" })
       .click();
@@ -257,15 +260,62 @@ test.describe("authenticated workspace browser flows", () => {
     await expect(capacityCard).toContainText("30m");
     await expect(capacityCard).toContainText("of 1h 30m available");
     await expect(page.getByRole("heading", { name: taskTitle })).toBeVisible();
+    const timeline = page.locator(".plan-timeline");
+    await expect(
+      timeline.getByRole("heading", {
+        name: deferredTaskTitle,
+        exact: true,
+      }),
+    ).toHaveCount(0);
     const deferredCard = page.locator(".deferred-card");
     await expect(deferredCard).toContainText("NOT FORCED IN");
-    await expect(deferredCard).toContainText(deferredTaskTitle);
-    await expect(deferredCard).toContainText(
+    const capacityDeferredItem = deferredCard
+      .locator("li")
+      .filter({ hasText: deferredTaskTitle });
+    await expect(capacityDeferredItem).toContainText(
       "It does not fit in the remaining available time without creating a conflict.",
     );
     await expect(
       page.getByText("1 task needs a deliberate decision."),
     ).toBeVisible();
+    await expectNoAxeViolations(page);
+
+    const dependentTask = await browserApi(page, "/tasks", "POST", {
+      title: dependentTaskTitle,
+      estimateMinutes: 30,
+      priority: "critical",
+      impact: 5,
+      dependencies: [deferredTask.payload.id],
+    });
+    expect(dependentTask.status).toBe(201);
+    await page.getByRole("button", { name: "Regenerate plan" }).click();
+    await expect(
+      page.getByText(
+        "A fresh draft is ready. Nothing changes until you approve it.",
+      ),
+    ).toBeVisible();
+    await expect(
+      timeline.getByRole("heading", {
+        name: deferredTaskTitle,
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await expect(
+      timeline.getByRole("heading", {
+        name: dependentTaskTitle,
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    const dependencyDeferredItem = deferredCard
+      .locator("li")
+      .filter({ hasText: dependentTaskTitle });
+    await expect(dependencyDeferredItem).toContainText(
+      "Its dependencies form a cycle or could not be scheduled before it.",
+    );
+    await expect(
+      page.getByText("2 tasks need a deliberate decision."),
+    ).toBeVisible();
+    await expectNoAxeViolations(page);
 
     await page.getByRole("button", { name: "Edit schedule" }).click();
     const draftStart = page.getByLabel("Starts in UTC");
@@ -396,6 +446,38 @@ test.describe("authenticated workspace browser flows", () => {
         name: `Mark ${deferredTaskTitle} complete`,
       }),
     ).toBeVisible();
+    const dependentTaskRow = page.locator(".task-row").filter({
+      has: page.getByRole("heading", {
+        name: dependentTaskTitle,
+        exact: true,
+      }),
+    });
+    await expect(
+      dependentTaskRow.getByRole("button", {
+        name: `Mark ${dependentTaskTitle} complete`,
+      }),
+    ).toBeVisible();
+    const persistedTasks = (await browserApi(page, "/tasks", "GET")) as {
+      status: number;
+      payload: {
+        items: Array<{
+          title: string;
+          status: string;
+          dependencies: string[];
+        }>;
+      };
+    };
+    expect(persistedTasks.status).toBe(200);
+    expect(
+      persistedTasks.payload.items.find(
+        (task) => task.title === dependentTaskTitle,
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        status: "todo",
+        dependencies: [deferredTask.payload.id],
+      }),
+    );
   });
 
   test("keeps daylight-saving calendar input explicit in a non-UTC planning zone", async ({
