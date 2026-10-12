@@ -4,13 +4,14 @@
 
 > Capture → Understand → Prioritize → Plan → Focus → Reflect → Adapt
 
-This repository started as an empty project name. The current implementation is an intentionally honest local-development foundation: a polished web experience plus a versioned API, account registration/sign-in, opaque cookie sessions, ownership enforcement, IANA-time-zone planning preferences, real user-created commitments, editable owned tasks with user-confirmed breakdown steps, user-controlled daily-draft scheduling, relational persistence, a deterministic decision engine, daily planning, and timestamp-safe focus sessions. It does **not** present cloud deployment, email recovery/verification, external calendar sync, LLM coaching, analytics, habits, projects, recurrence, tags, or mobile as complete features.
+This repository started as an empty project name. The current implementation is an intentionally honest local-development foundation: a polished web experience plus a versioned API, account registration/sign-in, opaque cookie sessions, ownership enforcement, IANA-time-zone planning preferences, real user-created commitments, editable owned tasks with user-confirmed breakdown steps, explicit projects/goals/milestones, user-controlled daily-draft scheduling, relational persistence, a deterministic decision engine, daily planning, and timestamp-safe focus sessions. It does **not** present cloud deployment, email recovery/verification, external calendar sync, LLM coaching, goal-aware planning analytics, habits, recurrence, tags, or mobile as complete features.
 
 ## What works today
 
-- **Responsive web workspace** with a distinctive dark FocusAI visual system and functional Command Center, Task Workspace, Planning Studio, Schedule & Capacity, and Focus Studio routes.
-- **Task workspace and full editing**: quick capture, search/filter, edit every user-editable task field, manage owned dependencies, complete/delete, and use actionable tasks as plan inputs.
-- **User-confirmed breakdowns**: a task editor lets a person add and review step titles/estimates before a single atomic confirmation creates child records. The parent remains visible as a container but is excluded from future plan drafts, new dashboard recommendations, and focus starts so parent and steps are not double-booked. Deleting a container releases its retained child steps back to standalone tasks.
+- **Responsive web workspace** with a distinctive dark FocusAI visual system and functional Command Center, Task Workspace, Goals & Milestones, Planning Studio, Schedule & Capacity, and Focus Studio routes.
+- **Task workspace and full editing**: quick capture, search/filter, edit every user-editable task field, deliberately link an owned goal, manage owned dependencies, complete/delete, and use actionable tasks as plan inputs. A goal link never silently changes the separate numeric goal-alignment planning signal.
+- **Projects, goals, and milestones**: create/edit/delete user-owned project groupings, goals, and explicit milestones in a dedicated workspace; link actual tasks, filter to linked work, and view only recorded completion progress. Project deletion releases goals, and goal deletion releases task links while cascading its milestones.
+- **User-confirmed breakdowns**: a task editor lets a person add and review step titles/estimates before a single atomic confirmation creates child records. The parent remains visible as a container but is excluded from future plan drafts, new dashboard recommendations, and focus starts so parent and steps are not double-booked. Child steps inherit the parent’s goal link server-side. Deleting a container releases its retained child steps back to standalone tasks.
 - **Deterministic decision engine** that ranks active tasks, explains ranking signals, produces non-overlapping whole-task schedules, respects fixed commitments supplied to it, accounts for dependencies, and explicitly defers work that does not fit.
 - **Daily plan drafts, reviewed adjustment, and approval**: generate a plan from real stored tasks, saved local working hours, and fixed commitments; inspect reasons/capacity/deferred work; then explicitly move/reorder a current daily draft in profile-local time. The server rechecks complete-draft availability, current fixed commitments, transition buffers, task actionability, and dependencies before saving. Accepted and recovery plans remain immutable/recalculated rather than silently rewritten.
 - **Schedule & capacity**: configure an IANA time zone, working day, transition buffer, and recovery high-load cap; create, edit, and remove real commitments in local wall time. Fixed commitments are subtracted from future plan drafts, while flexible items remain visible without reducing capacity.
@@ -112,22 +113,23 @@ The most recent verified baseline is recorded in [`docs/IMPLEMENTATION_STATUS.md
 
 All currently implemented endpoints are under `/api/v1`.
 
-| Area           | Endpoints                                                                                                                                             |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Service        | `GET /health`, `GET /meta`, `GET /dashboard`                                                                                                          |
-| Authentication | `POST /auth/register`, `POST /auth/login`, `GET /auth/session`, `POST /auth/logout`, `POST /auth/session/rotate`, `POST /auth/sessions/revoke-others` |
-| User           | `GET /users/me`, `GET/PATCH /preferences`                                                                                                             |
-| Calendar       | `GET/POST /calendar-events`, `PATCH/DELETE /calendar-events/:eventId`                                                                                 |
-| Tasks          | `GET/POST /tasks`, `GET/PATCH/DELETE /tasks/:taskId`, `POST /tasks/:taskId/complete`, `POST /tasks/:taskId/decompose`                                 |
-| Plans          | `GET /plans`, `POST /plans/generate`, `PATCH /plans/:planId/blocks`, `POST /plans/:planId/accept`                                                     |
-| Focus          | `GET /focus-sessions`, `GET /focus-sessions/active`, `POST /focus-sessions`, `POST /focus-sessions/:sessionId/transition`                             |
+| Area           | Endpoints                                                                                                                                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Service        | `GET /health`, `GET /meta`, `GET /dashboard`                                                                                                                                                                 |
+| Authentication | `POST /auth/register`, `POST /auth/login`, `GET /auth/session`, `POST /auth/logout`, `POST /auth/session/rotate`, `POST /auth/sessions/revoke-others`                                                        |
+| User           | `GET /users/me`, `GET/PATCH /preferences`                                                                                                                                                                    |
+| Calendar       | `GET/POST /calendar-events`, `PATCH/DELETE /calendar-events/:eventId`                                                                                                                                        |
+| Projects/goals | `GET/POST /projects`, `GET/PATCH/DELETE /projects/:projectId`, `GET/POST /goals`, `GET/PATCH/DELETE /goals/:goalId`, `POST /goals/:goalId/milestones`, `PATCH/DELETE /goals/:goalId/milestones/:milestoneId` |
+| Tasks          | `GET/POST /tasks` (optional `goalId` filter/link), `GET/PATCH/DELETE /tasks/:taskId`, `POST /tasks/:taskId/complete`, `POST /tasks/:taskId/decompose`                                                        |
+| Plans          | `GET /plans`, `POST /plans/generate`, `PATCH /plans/:planId/blocks`, `POST /plans/:planId/accept`                                                                                                            |
+| Focus          | `GET /focus-sessions`, `GET /focus-sessions/active`, `POST /focus-sessions`, `POST /focus-sessions/:sessionId/transition`                                                                                    |
 
 The API's `/meta` route explicitly reports `authenticated-local-development` mode. There is no misleading “connected” or “production” status.
 
 ## Data and migration policy
 
 - Timestamp fields are stored as ISO-8601 UTC strings in the current local datastore.
-- The runtime migration ledger is `schema_migrations`; startup applies additive schema version(s) without a destructive reset.
+- The runtime migration ledger is `schema_migrations`; startup applies additive schema version(s) without a destructive reset. Version 4 adds user-owned projects, goals, milestones, and nullable task goal links.
 - Local test databases are created in a temporary directory and removed by tests.
 - Session and CSRF **hashes**, not reusable tokens, are stored in the local database. Never commit `apps/api/data/*.db`, `.env`, credentials, or user activity data.
 - Back up a local workspace by stopping the API and copying the SQLite database plus its `-wal` sidecar if present. Restoration procedures for hosted production storage are not yet implemented; see limitations below.
@@ -138,7 +140,7 @@ The project is **not production ready yet**. Important work remains:
 
 1. Email verification/password reset, account deactivation/export/deletion UX, and a production datastore adapter.
 2. Multiple availability windows/breaks, recurring commitments, calendar-conflict guidance, and external calendar authorization/sync.
-3. Projects, goals, notes, habits, task recurrence/tags, and analytics sourced from persisted records.
+3. Notes and conversion to tasks, habits, task recurrence/tags, and goal-aware analytics/planning behavior with explicit semantics.
 4. Recommendation feedback, richer multi-day/block-splitting and conflict-resolution workflows, optional LLM-provider abstraction with privacy controls and schema validation, and AI coach actions with confirmations.
 5. React Native/Expo mobile client, offline queue/synchronization/conflict tests, and Android/iOS verification.
 6. Production deployment, backups/restores, monitoring, deployment-specific security review, and E2E/browser accessibility tests.

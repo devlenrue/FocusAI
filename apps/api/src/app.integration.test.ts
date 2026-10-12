@@ -789,6 +789,323 @@ describe("FocusAI authenticated API", () => {
     );
   });
 
+  it("keeps projects, goals, milestones, and task links user-owned and lifecycle-safe", async () => {
+    const asha = await register("Asha", "asha@example.com");
+    const ren = await register("Ren", "ren@example.com");
+
+    const projectResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        title: "First release",
+        description: "A real project grouping.",
+        targetDate: "2026-11-01",
+      },
+    });
+    expect(projectResponse.statusCode).toBe(201);
+    const project = projectResponse.json() as { id: string; status: string };
+    expect(project).toMatchObject({ status: "active" });
+
+    const goalResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/goals",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        projectId: project.id,
+        title: "Release a usable workflow",
+        description: "The stored outcome is deliberate, not inferred.",
+        targetDate: "2026-10-30",
+      },
+    });
+    expect(goalResponse.statusCode).toBe(201);
+    const goal = goalResponse.json() as {
+      id: string;
+      projectId: string | null;
+      projectTitle: string | null;
+      status: string;
+      progress: { totalTasks: number; totalMilestones: number };
+    };
+    expect(goal).toMatchObject({
+      projectId: project.id,
+      projectTitle: "First release",
+      status: "active",
+      progress: { totalTasks: 0, totalMilestones: 0 },
+    });
+
+    const projectDetail = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${project.id}`,
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(projectDetail.statusCode).toBe(200);
+    expect(projectDetail.json()).toMatchObject({
+      progress: { totalGoals: 1, completedGoals: 0, activeGoals: 1 },
+    });
+
+    const renCannotReadProject = await app.inject({
+      method: "GET",
+      url: `/api/v1/projects/${project.id}`,
+      headers: authHeaders(ren.cookies, false),
+    });
+    expect(renCannotReadProject.statusCode).toBe(404);
+    const renCannotAttachToAshaProject = await app.inject({
+      method: "POST",
+      url: "/api/v1/goals",
+      headers: authHeaders(ren.cookies),
+      payload: { title: "Not Ren's project", projectId: project.id },
+    });
+    expect(renCannotAttachToAshaProject.statusCode).toBe(404);
+
+    const linkedTaskResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/tasks",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        title: "Ship the first usable flow",
+        estimateMinutes: 45,
+        goalAlignment: 0.37,
+        goalId: goal.id,
+      },
+    });
+    expect(linkedTaskResponse.statusCode).toBe(201);
+    const linkedTask = linkedTaskResponse.json() as {
+      id: string;
+      goalId: string | null;
+      goalTitle: string | null;
+      goalAlignment: number;
+    };
+    expect(linkedTask).toMatchObject({
+      goalId: goal.id,
+      goalTitle: "Release a usable workflow",
+      goalAlignment: 0.37,
+    });
+
+    const goalTaskList = await app.inject({
+      method: "GET",
+      url: `/api/v1/tasks?goalId=${goal.id}`,
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(goalTaskList.statusCode).toBe(200);
+    expect(
+      (goalTaskList.json() as { items: Array<{ id: string }> }).items,
+    ).toEqual([expect.objectContaining({ id: linkedTask.id })]);
+
+    const renCannotLinkToAshaGoal = await app.inject({
+      method: "POST",
+      url: "/api/v1/tasks",
+      headers: authHeaders(ren.cookies),
+      payload: { title: "Private link attempt", goalId: goal.id },
+    });
+    expect(renCannotLinkToAshaGoal.statusCode).toBe(404);
+
+    const milestoneResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/goals/${goal.id}/milestones`,
+      headers: authHeaders(asha.cookies),
+      payload: { title: "Review the release flow", targetDate: "2026-10-25" },
+    });
+    expect(milestoneResponse.statusCode).toBe(201);
+    const milestone = milestoneResponse.json() as {
+      id: string;
+      status: string;
+      goalId: string;
+    };
+    expect(milestone).toMatchObject({ goalId: goal.id, status: "pending" });
+
+    const renCannotUpdateMilestone = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/goals/${goal.id}/milestones/${milestone.id}`,
+      headers: authHeaders(ren.cookies),
+      payload: { status: "completed" },
+    });
+    expect(renCannotUpdateMilestone.statusCode).toBe(404);
+
+    const incompleteGoal = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/goals/${goal.id}`,
+      headers: authHeaders(asha.cookies),
+      payload: { status: "completed" },
+    });
+    expect(incompleteGoal.statusCode).toBe(409);
+
+    const completeTask = await app.inject({
+      method: "POST",
+      url: `/api/v1/tasks/${linkedTask.id}/complete`,
+      headers: authHeaders(asha.cookies),
+      payload: { actualMinutes: 42 },
+    });
+    expect(completeTask.statusCode).toBe(200);
+
+    const pendingMilestoneGoal = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/goals/${goal.id}`,
+      headers: authHeaders(asha.cookies),
+      payload: { status: "completed" },
+    });
+    expect(pendingMilestoneGoal.statusCode).toBe(409);
+
+    const completeMilestone = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/goals/${goal.id}/milestones/${milestone.id}`,
+      headers: authHeaders(asha.cookies),
+      payload: { status: "completed" },
+    });
+    expect(completeMilestone.statusCode).toBe(200);
+    expect(
+      (completeMilestone.json() as { completedAt: string | null }).completedAt,
+    ).toBeTruthy();
+
+    const completeGoal = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/goals/${goal.id}`,
+      headers: authHeaders(asha.cookies),
+      payload: { status: "completed" },
+    });
+    expect(completeGoal.statusCode).toBe(200);
+    expect(completeGoal.json()).toMatchObject({
+      status: "completed",
+      progress: {
+        totalTasks: 1,
+        completedTasks: 1,
+        totalMilestones: 1,
+        completedMilestones: 1,
+      },
+    });
+
+    const noNewWorkOnCompletedGoal = await app.inject({
+      method: "POST",
+      url: "/api/v1/tasks",
+      headers: authHeaders(asha.cookies),
+      payload: { title: "Late scope", goalId: goal.id },
+    });
+    expect(noNewWorkOnCompletedGoal.statusCode).toBe(409);
+    const noReopenOnCompletedGoal = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/tasks/${linkedTask.id}`,
+      headers: authHeaders(asha.cookies),
+      payload: { status: "todo" },
+    });
+    expect(noReopenOnCompletedGoal.statusCode).toBe(409);
+
+    const activeBreakdownGoalResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/goals",
+      headers: authHeaders(asha.cookies),
+      payload: { title: "Review a linked breakdown" },
+    });
+    expect(activeBreakdownGoalResponse.statusCode).toBe(201);
+    const activeBreakdownGoal = activeBreakdownGoalResponse.json() as {
+      id: string;
+    };
+    const parentResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/tasks",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        title: "Prepare an explicitly linked breakdown",
+        goalId: activeBreakdownGoal.id,
+        goalAlignment: 0.2,
+      },
+    });
+    expect(parentResponse.statusCode).toBe(201);
+    const parent = parentResponse.json() as {
+      id: string;
+      goalId: string | null;
+    };
+    const breakdownResponse = await app.inject({
+      method: "POST",
+      url: `/api/v1/tasks/${parent.id}/decompose`,
+      headers: authHeaders(asha.cookies),
+      payload: {
+        steps: [
+          {
+            title: "Reviewed child work",
+            estimateMinutes: 15,
+            goalId: null,
+            goalAlignment: 0.9,
+          },
+        ],
+      },
+    });
+    expect(breakdownResponse.statusCode).toBe(201);
+    const breakdown = breakdownResponse.json() as {
+      steps: Array<{
+        id: string;
+        goalId: string | null;
+        goalAlignment: number;
+      }>;
+    };
+    expect(breakdown.steps).toEqual([
+      expect.objectContaining({
+        goalId: activeBreakdownGoal.id,
+        goalAlignment: 0.9,
+      }),
+    ]);
+
+    const archivedProjectResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/projects",
+      headers: authHeaders(asha.cookies),
+      payload: { title: "Archived context" },
+    });
+    const archivedProject = archivedProjectResponse.json() as { id: string };
+    const archiveProject = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${archivedProject.id}`,
+      headers: authHeaders(asha.cookies),
+      payload: { status: "archived" },
+    });
+    expect(archiveProject.statusCode).toBe(200);
+    const noGoalOnArchivedProject = await app.inject({
+      method: "POST",
+      url: "/api/v1/goals",
+      headers: authHeaders(asha.cookies),
+      payload: { title: "Blocked grouping", projectId: archivedProject.id },
+    });
+    expect(noGoalOnArchivedProject.statusCode).toBe(409);
+
+    const deleteProject = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/projects/${project.id}`,
+      headers: authHeaders(asha.cookies),
+    });
+    expect(deleteProject.statusCode).toBe(204);
+    const releasedGoal = await app.inject({
+      method: "GET",
+      url: `/api/v1/goals/${goal.id}`,
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(releasedGoal.statusCode).toBe(200);
+    expect(releasedGoal.json()).toMatchObject({
+      projectId: null,
+      projectTitle: null,
+    });
+
+    const deleteGoal = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/goals/${goal.id}`,
+      headers: authHeaders(asha.cookies),
+    });
+    expect(deleteGoal.statusCode).toBe(204);
+    const releasedTask = await app.inject({
+      method: "GET",
+      url: `/api/v1/tasks/${linkedTask.id}`,
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(releasedTask.statusCode).toBe(200);
+    expect(releasedTask.json()).toMatchObject({
+      goalId: null,
+      goalTitle: null,
+    });
+    expect(
+      database.get<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM milestones WHERE goal_id = ?",
+        [goal.id],
+      ),
+    ).toEqual({ count: 0 });
+  });
+
   it("uses IANA preferences and user-owned fixed commitments in plans", async () => {
     const asha = await register("Asha", "asha@example.com");
 
@@ -1093,13 +1410,19 @@ describe("FocusAI authenticated API", () => {
       upgraded.get<{ version: number }>(
         "SELECT MAX(version) AS version FROM schema_migrations",
       ),
-    ).toEqual({ version: 3 });
+    ).toEqual({ version: 4 });
     expect(
       upgraded.get<{
         parent_task_id: string | null;
         is_decomposed: number;
-      }>("SELECT parent_task_id, is_decomposed FROM tasks LIMIT 1"),
-    ).toEqual({ parent_task_id: null, is_decomposed: 0 });
+        goal_id: string | null;
+      }>("SELECT parent_task_id, is_decomposed, goal_id FROM tasks LIMIT 1"),
+    ).toEqual({ parent_task_id: null, is_decomposed: 0, goal_id: null });
+    expect(
+      upgraded.get<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'goals'",
+      ),
+    ).toEqual({ name: "goals" });
     expect(
       upgraded.get<{ email: string; password_hash: string | null }>(
         "SELECT email, password_hash FROM users WHERE id = ?",

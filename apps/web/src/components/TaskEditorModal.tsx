@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   Check,
@@ -12,6 +12,7 @@ import {
 import { api } from "@/lib/api";
 import type {
   CognitiveLoad,
+  Goal,
   Priority,
   Task,
   TaskInput,
@@ -36,6 +37,7 @@ interface EditorFields {
   dueAt: string;
   cognitiveLoad: CognitiveLoad;
   goalAlignment: number;
+  goalId: string | null;
   blocked: boolean;
   dependencies: string[];
 }
@@ -66,6 +68,7 @@ function toEditorFields(task: Task): EditorFields {
     dueAt: datetimeLocalValue(task.dueAt),
     cognitiveLoad: task.cognitiveLoad,
     goalAlignment: task.goalAlignment,
+    goalId: task.goalId,
     blocked: task.blocked,
     dependencies: task.dependencies,
   };
@@ -91,6 +94,11 @@ export function TaskEditorModal({
   );
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [steps, setSteps] = useState<StepDraft[]>([]);
+  const goalsQuery = useQuery({
+    queryKey: ["goals"],
+    queryFn: api.getGoals,
+    enabled: open,
+  });
 
   useEffect(() => {
     if (!open || !task) return;
@@ -102,6 +110,7 @@ export function TaskEditorModal({
   const refreshWorkspace = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["tasks"] }),
+      queryClient.invalidateQueries({ queryKey: ["goals"] }),
       queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
       queryClient.invalidateQueries({ queryKey: ["plan"] }),
     ]);
@@ -126,6 +135,7 @@ export function TaskEditorModal({
         dueAt: input.dueAt ? new Date(input.dueAt).toISOString() : null,
         cognitiveLoad: input.cognitiveLoad,
         goalAlignment: Math.max(0, Math.min(1, Number(input.goalAlignment))),
+        goalId: input.goalId,
         blocked: input.blocked,
         dependencies: input.dependencies,
       }),
@@ -166,6 +176,13 @@ export function TaskEditorModal({
           )
         : [],
     [task, tasks],
+  );
+  const goalOptions = useMemo(
+    () =>
+      (goalsQuery.data?.items ?? []).filter(
+        (goal: Goal) => goal.status === "active" || goal.id === fields?.goalId,
+      ),
+    [fields?.goalId, goalsQuery.data?.items],
   );
 
   if (!open || !task || !fields) return null;
@@ -252,6 +269,8 @@ export function TaskEditorModal({
         0,
         Math.min(1, Number(editorFields.goalAlignment)),
       ),
+      // The API also enforces parent-goal inheritance as the trusted boundary.
+      goalId: editorFields.goalId,
       blocked: false,
       dependencies: [],
     }));
@@ -425,6 +444,33 @@ export function TaskEditorModal({
                 }
               />
             </label>
+            <label className="task-goal-field">
+              Goal <span className="field-optional">optional</span>
+              <select
+                value={fields.goalId ?? ""}
+                onChange={(event) =>
+                  patchFields({ goalId: event.target.value || null })
+                }
+              >
+                <option value="">No linked goal</option>
+                {goalOptions.map((goal) => (
+                  <option key={goal.id} value={goal.id}>
+                    {goal.title}
+                    {goal.status === "active" ? "" : ` · ${goal.status}`}
+                  </option>
+                ))}
+              </select>
+              <small>
+                This records real context; it does not silently change the
+                task’s planning score.
+              </small>
+              {goalsQuery.isError && (
+                <small className="task-goal-load-error">
+                  Goals could not be loaded. Keep or clear the current link and
+                  try again.
+                </small>
+              )}
+            </label>
             <label>
               Due <span className="field-optional">optional</span>
               <input
@@ -505,8 +551,9 @@ export function TaskEditorModal({
                   <p className="breakdown-inheritance">
                     Review each title and estimate below. Confirmed steps start
                     as unblocked to-dos and inherit this task’s priority,
-                    impact, due date, cognitive load, and goal alignment. Save
-                    parent edits first if you want those values carried forward.
+                    impact, due date, cognitive load, goal alignment, and goal
+                    link. Save parent edits first if you want those values
+                    carried forward.
                   </p>
                   <div className="step-list">
                     {steps.map((step, index) => (

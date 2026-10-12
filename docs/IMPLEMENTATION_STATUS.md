@@ -41,7 +41,7 @@ Environment verified during audit: Node `v22.22.3`, npm `10.9.8`.
 | Versioned API             | `/api/v1`, Zod validation, consistent errors, request IDs, Helmet/CORS, OpenAPI UI                                              | **Tested**                                         |
 | Local relational data     | Normalized SQLite schema, foreign keys, indexes, transaction wrapper, additive migration ledger                                 | **Tested**                                         |
 | Decision engine           | Deterministic scoring, reasons, fixed-commitment exclusion, dependency sequencing, capacity/deferrals, recovery rules           | **Tested**                                         |
-| Unit/integration tests    | 4 decision-engine unit tests and 2 API integration tests                                                                        | **Tested**                                         |
+| Unit/integration tests    | 4 decision-engine unit tests and 9 API integration tests                                                                        | **Tested**                                         |
 | Security dependency check | `npm audit --audit-level=moderate`                                                                                              | **Tested** — 0 vulnerabilities in current lockfile |
 
 ### Actual implementation choices
@@ -62,7 +62,7 @@ Environment verified during audit: Node `v22.22.3`, npm `10.9.8`.
 | Password hashing/session rotation/revocation | **Tested**      | Memory-hard scrypt, HTTP-only opaque cookies, rotation and revoke-other-session routes              |
 | Server authorization/ownership enforcement   | **Tested**      | Protected routes pass verified server user IDs to repositories; cross-user access tests return 404  |
 | CSRF/rate limiting/auth audit log            | **Tested**      | Session-bound double-submit CSRF, stricter auth rate limits, and minimal non-sensitive audit events |
-| Additive database migrations                 | **Tested**      | Version 1 → 3 preservation is covered; local SQLite remains intentionally limited                   |
+| Additive database migrations                 | **Tested**      | Version 1 → 4 preservation is covered; local SQLite remains intentionally limited                   |
 | Production relational adapter                | **Not Started** | No hosted production database is configured or claimed                                              |
 | Preference settings UI / IANA timezone       | **Tested**      | Authenticated Schedule & Capacity UI validates IANA zones and uses them for plan-day boundaries     |
 
@@ -70,16 +70,16 @@ Environment verified during audit: Node `v22.22.3`, npm `10.9.8`.
 
 **Objective:** Replace the single implicit local identity with real account/session flows and make all workspace access server-authorized before expanding shared product data.
 
-| Area                      | Delivered behavior                                                                                             | Status     |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------- |
-| Registration/sign-in gate | Functional Create account / Sign in screen; no demo account or bypass route                                    | **Tested** |
-| Password security         | 12+ character policy, unique salted memory-hard scrypt hash, constant-time compare, no password logging        | **Tested** |
-| Session model             | Random opaque HTTP-only session cookie; only SHA-256 token hash persisted                                      | **Tested** |
-| CSRF                      | Session-bound readable CSRF cookie plus required `X-CSRF-Token` on every unsafe workspace mutation             | **Tested** |
-| Logout/revocation         | Current-session sign-out, session rotation, and revoke-other-session endpoint                                  | **Tested** |
-| Ownership                 | Every task/plan/focus/dashboard query requires authenticated user context; no default repository user remains  | **Tested** |
-| Migration safety          | Version 2/3 additive migrations; a v1 database upgrade and legacy local workspace claim are integration-tested | **Tested** |
-| Rate limits/auditability  | Tighter registration/sign-in limits and minimal sensitive-data-free authentication audit events                | **Tested** |
+| Area                      | Delivered behavior                                                                                               | Status     |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------- |
+| Registration/sign-in gate | Functional Create account / Sign in screen; no demo account or bypass route                                      | **Tested** |
+| Password security         | 12+ character policy, unique salted memory-hard scrypt hash, constant-time compare, no password logging          | **Tested** |
+| Session model             | Random opaque HTTP-only session cookie; only SHA-256 token hash persisted                                        | **Tested** |
+| CSRF                      | Session-bound readable CSRF cookie plus required `X-CSRF-Token` on every unsafe workspace mutation               | **Tested** |
+| Logout/revocation         | Current-session sign-out, session rotation, and revoke-other-session endpoint                                    | **Tested** |
+| Ownership                 | Every task/plan/focus/dashboard query requires authenticated user context; no default repository user remains    | **Tested** |
+| Migration safety          | Version 2/3/4 additive migrations; a v1 database upgrade and legacy local workspace claim are integration-tested | **Tested** |
+| Rate limits/auditability  | Tighter registration/sign-in limits and minimal sensitive-data-free authentication audit events                  | **Tested** |
 
 See [`AUTHENTICATION.md`](AUTHENTICATION.md) for exact cookie, CSRF, password, and legacy-data behavior.
 
@@ -109,19 +109,34 @@ This is manual local calendar data, not a connected provider, recurring-event sy
 | Confirmed breakdown   | A user adds/reviews step titles and estimates locally, then explicitly confirms one transaction that creates child records and marks the parent as a container                                               | **Tested**      |
 | Planner-safe behavior | Containers are excluded from new plan drafts and new dashboard rankings; focus starts reject containers, while ordinary child steps remain editable/actionable                                               | **Tested**      |
 | Data preservation     | Schema version 3 adds nullable parent references and a container flag without resetting existing records; deleting a container releases rather than deletes retained steps                                   | **Tested**      |
-| Non-goals             | Automatic/AI decomposition, recurrence, tags, projects/goals, and browser E2E/accessibility certification remain outside this increment                                                                      | **Not Started** |
+| Non-goals             | Automatic/AI decomposition, nested hierarchy, recurrence, tags, and browser E2E/accessibility certification remain outside this increment                                                                    | **Not Started** |
 
 ### Increment 3 — connected productivity records
 
-| Feature                                  | Status          | Notes                                                                                                                                     |
-| ---------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Projects/goals/milestones                | **Not Started** | `goal_alignment` exists as an engine input only                                                                                           |
-| Notes and conversion to task             | **Not Started** | No placeholder route                                                                                                                      |
-| Habit tracking                           | **Not Started** | No placeholder route                                                                                                                      |
-| Calendar event CRUD/views                | **Tested**      | Owned API/UI CRUD, local-zone display, and fixed/flexible capacity behavior are covered                                                   |
-| Task editing and confirmed decomposition | **Tested**      | Full owned-task editing/dependencies plus explicit reviewed step creation; breakdown parents are excluded from future planning candidates |
-| Task recurrence and tags                 | **Not Started** | Neither recurrence rules nor tag records/UI are implemented                                                                               |
-| Analytics                                | **Not Started** | No fabricated charts                                                                                                                      |
+| Feature                                  | Status          | Notes                                                                                                                                                                         |
+| ---------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Projects/goals/milestones                | **Tested**      | User-owned V4 records, guarded lifecycle routes, factual progress, task links, and integration coverage are implemented; `goal_alignment` remains an independent engine input |
+| Notes and conversion to task             | **Not Started** | No placeholder route                                                                                                                                                          |
+| Habit tracking                           | **Not Started** | No placeholder route                                                                                                                                                          |
+| Calendar event CRUD/views                | **Tested**      | Owned API/UI CRUD, local-zone display, and fixed/flexible capacity behavior are covered                                                                                       |
+| Task editing and confirmed decomposition | **Tested**      | Full owned-task editing/dependencies plus explicit reviewed step creation; breakdown parents are excluded from future planning candidates                                     |
+| Task recurrence and tags                 | **Not Started** | Neither recurrence rules nor tag records/UI are implemented                                                                                                                   |
+| Analytics                                | **Not Started** | No fabricated charts                                                                                                                                                          |
+
+### Increment 3 delivery — projects, goals, and milestones foundation
+
+**Objective:** Add a real, authenticated ownership hierarchy for projects, goals, milestones, and optional task context without inventing progress, changing planner behavior, or overstating unsupported hierarchy features.
+
+| Area                    | Delivered behavior                                                                                                                                                                                                   | Status          |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| Additive owned records  | Schema version 4 creates `projects`, `goals`, and `milestones`, plus nullable `tasks.goal_id`; existing task records are retained without reset                                                                      | **Tested**      |
+| Ownership and lifecycle | Protected CRUD routes/repositories enforce owner lookups; goals only enter active projects, milestones are mutable only on active goals, and goal completion rejects unfinished linked actionable work or milestones | **Tested**      |
+| Preservation semantics  | Deleting a project releases its goals; deleting a goal releases task links and cascades its milestones; task deletion does not fabricate progress                                                                    | **Tested**      |
+| Honest progress         | Goal progress is an aggregation of stored done-task and completed-milestone records only; empty goals show no invented achievement                                                                                   | **Tested**      |
+| Task context            | The full editor can deliberately choose/clear a goal and the Task Workspace can filter/display that context; server-side decomposition inherits the parent goal link                                                 | **Implemented** |
+| Planning separation     | `goal_alignment` remains a separate numeric input; linking/unlinking a goal does not rewrite it or change planner/draft logic                                                                                        | **Implemented** |
+| Goals workspace         | Authenticated Goals & Milestones navigation supports project/goal/milestone CRUD, lifecycle feedback, linked-task access, and release-aware deletion confirmation                                                    | **Implemented** |
+| Non-goals               | Nested project/goal hierarchies, goal-aware planner weighting/analytics, automatic decomposition, recurrence, tags, browser E2E, and accessibility certification are not claimed                                     | **Not Started** |
 
 ### Increment 4 delivery — user-controlled plan block editing and reordering
 
@@ -165,8 +180,8 @@ This is manual local calendar data, not a connected provider, recurring-event sy
 
 ## Files and architectural areas added across Increments 1–4
 
-- `apps/web`: React/Vite responsive product surfaces/design system, private registration/sign-in gate/account header, and Schedule & Capacity UI.
-- `apps/api`: Fastify `/api/v1`, additive schema migration, authenticated route guards, password/session services, IANA-time conversion, preference/calendar/task/plan/focus repositories, and API integration tests.
+- `apps/web`: React/Vite responsive product surfaces/design system, private registration/sign-in gate/account header, Goals & Milestones UI, and Schedule & Capacity UI.
+- `apps/api`: Fastify `/api/v1`, additive schema migration, authenticated route guards, password/session services, IANA-time conversion, owned project/goal/milestone/task/plan/focus repositories, and API integration tests.
 - `packages/decision-engine`: pure scoring/scheduling/recovery package and unit tests.
 - `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md`, `docs/DECISION_ENGINE.md`, `docs/TESTING.md`, and `docs/AUTHENTICATION.md`.
 - Root workspace/tooling, `.env.example`, `.gitignore`, and `.github/workflows/ci.yml`.
@@ -176,6 +191,7 @@ This is manual local calendar data, not a connected provider, recurring-event sy
 - Schema version **1** in `apps/api/src/db/schema.ts`, tracked in `schema_migrations`.
 - Schema version **2** adds user credential metadata, `auth_sessions`, normalized email uniqueness, and `auth_audit_events` additively.
 - Schema version **3** adds nullable `tasks.parent_task_id`, constrained `tasks.is_decomposed`, and an owned parent lookup index for user-confirmed breakdowns.
+- Schema version **4** adds owned `projects`, `goals`, and `milestones`, plus nullable `tasks.goal_id`; project deletion releases goals and goal deletion releases task links while cascading milestones.
 - No destructive reset was used. The normal local database is ignored by Git. Tests use temporary throwaway databases.
 
 ## Verification log
@@ -208,6 +224,9 @@ This is manual local calendar data, not a connected provider, recurring-event sy
 | 2026-10-12 | Isolated real-HTTP reviewed-plan scheduling smoke                           | Passed — registration/session/CSRF flow, two persisted tasks, editable daily draft, `PATCH /plans/:id/blocks`, profile-local block times, and manual-edit audit timestamp; temporary SQLite database removed afterward |
 | 2026-10-12 | Planning Studio preview/proxy smoke                                         | Passed — Vite `/plan` shell returned 200 and its relative unauthenticated `/api/v1/plans` proxy returned the expected 401; temporary API database removed afterward                                                    |
 | 2026-10-12 | GitHub Actions runs `38241770223` and `38241775664`                         | Passed — clean CI lint, typecheck, API/decision-engine tests, and production build for the schedule-editing commit on both push and pull-request events                                                                |
+| 2026-10-12 | Projects/goals/milestones foundation command suite                          | Passed — zero-warning lint; API/web/engine typecheck; 9 authenticated API integration tests + 4 decision-engine tests; production build; Prettier check; moderate audit with 0 vulnerabilities                         |
+| 2026-10-12 | Isolated real-HTTP projects/goals/milestones smoke                          | Passed — registration, project/goal/task/milestone CRUD, guarded premature goal completion 409, recorded completion, and linked-task filtering; temporary SQLite database removed afterward                            |
+| 2026-10-12 | Goals route preview/proxy smoke                                             | Passed — Vite `/goals` shell returned 200 and its relative unauthenticated `/api/v1/goals` proxy returned 401; a separate empty preview database is used                                                               |
 
 ## Risks, limitations, and next highest-priority action
 
@@ -217,8 +236,9 @@ This is manual local calendar data, not a connected provider, recurring-event sy
 | Experimental `node:sqlite`             | Not an appropriate unqualified production datastore claim                                                                       | Add supported production relational adapter and migration tooling                             |
 | DST ambiguity / nonexistent local time | The API intentionally rejects a time it cannot resolve without guessing                                                         | Add browser E2E coverage and a user-facing disambiguation design                              |
 | Manual local calendar only             | No external provider authorization, sync, recurrence, or conflict guidance exists                                               | Design explicit calendar connection and recurrence workflows                                  |
-| Confirmed one-level breakdown          | Steps are explicitly user-authored and safe for new drafts, but nested hierarchy, recurrence, and tags are intentionally absent | Evaluate projects/goals or recurrence only with explicit data-model and planning semantics    |
+| Confirmed one-level breakdown          | Steps are explicitly user-authored and safe for new drafts, but nested hierarchy, recurrence, and tags are intentionally absent | Evaluate richer hierarchy or recurrence only with explicit data-model and planning semantics  |
+| Goal context vs. planning              | Goal records and factual progress exist, but goal links deliberately do not change deterministic planner weighting or analytics | Define any goal-aware recommendation behavior explicitly, then add tests                      |
 | Manual daily-draft scheduling          | Edits are safely constrained to one day/current draft and do not split blocks or resolve conflicts automatically                | Design explicit multi-day/block-splitting conflict-resolution rules before expanding controls |
 | No mobile/offline                      | Cross-device/offline acceptance criteria are unverified                                                                         | Stabilize auth/API contracts, then add Expo client and sync design                            |
 
-**Next highest-priority action: projects/goals/milestones foundation.** Task-level goal alignment is currently only a planning signal; the next connected-record slice should add explicit user-owned goal structure before claiming goal-aware workflows or analytics.
+**Next highest-priority action: browser E2E and accessibility verification for the authenticated workspace.** Projects/goals/milestones are implemented and API-tested, but no browser E2E, screen-reader, or visual accessibility certification is claimed. Goal links remain context records until goal-aware planning or analytics is explicitly designed and tested.

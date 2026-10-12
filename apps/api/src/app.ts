@@ -23,9 +23,11 @@ import {
   ConflictError,
   DashboardService,
   FocusSessionRepository,
+  GoalRepository,
   NotFoundError,
   PlanRepository,
   PreferencesRepository,
+  ProjectRepository,
   TaskRepository,
   type TaskStatus,
   type UserPreferencesDto,
@@ -114,6 +116,9 @@ function requireWriteAuthentication(
 }
 
 const taskStatusSchema = z.enum(["backlog", "todo", "in_progress", "done"]);
+const projectStatusSchema = z.enum(["active", "archived"]);
+const goalStatusSchema = z.enum(["active", "completed", "archived"]);
+const milestoneStatusSchema = z.enum(["pending", "completed"]);
 const prioritySchema = z.enum(["low", "medium", "high", "critical"]);
 const cognitiveLoadSchema = z.enum(["low", "medium", "high"]);
 const isoSchema = z.string().datetime({ offset: true });
@@ -136,6 +141,9 @@ const timeZoneSchema = z
   .refine(isValidTimeZone, "Use a valid IANA time zone such as Africa/Nairobi.")
   .transform(canonicalTimeZone);
 const taskIdSchema = z.object({ taskId: z.string().uuid() });
+const projectIdSchema = z.object({ projectId: z.string().uuid() });
+const goalIdSchema = z.object({ goalId: z.string().uuid() });
+const milestoneIdSchema = z.object({ milestoneId: z.string().uuid() });
 const focusIdSchema = z.object({ sessionId: z.string().uuid() });
 const planIdSchema = z.object({ planId: z.string().uuid() });
 const calendarEventIdSchema = z.object({ eventId: z.string().uuid() });
@@ -164,6 +172,7 @@ const taskCreateSchema = z.object({
   dueAt: isoSchema.nullable().optional().default(null),
   cognitiveLoad: cognitiveLoadSchema.optional().default("medium"),
   goalAlignment: z.number().min(0).max(1).optional().default(0),
+  goalId: z.string().uuid().nullable().optional().default(null),
   blocked: z.boolean().optional().default(false),
   dependencies: z.array(z.string().uuid()).max(50).optional().default([]),
 });
@@ -182,6 +191,54 @@ const taskDecompositionSchema = z.object({
   // invents, expands, or silently creates steps.
   steps: z.array(taskCreateSchema).min(1).max(25),
 });
+
+const projectCreateSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  description: z
+    .string()
+    .trim()
+    .max(10_000)
+    .nullable()
+    .optional()
+    .default(null),
+  status: projectStatusSchema.optional().default("active"),
+  targetDate: calendarDateSchema.nullable().optional().default(null),
+});
+const projectUpdateSchema = projectCreateSchema
+  .partial()
+  .refine((input) => Object.keys(input).length > 0, {
+    message: "Provide at least one project value to update.",
+  });
+
+const goalCreateSchema = z.object({
+  projectId: z.string().uuid().nullable().optional().default(null),
+  title: z.string().trim().min(1).max(200),
+  description: z
+    .string()
+    .trim()
+    .max(10_000)
+    .nullable()
+    .optional()
+    .default(null),
+  status: goalStatusSchema.optional().default("active"),
+  targetDate: calendarDateSchema.nullable().optional().default(null),
+});
+const goalUpdateSchema = goalCreateSchema
+  .partial()
+  .refine((input) => Object.keys(input).length > 0, {
+    message: "Provide at least one goal value to update.",
+  });
+
+const milestoneCreateSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  status: milestoneStatusSchema.optional().default("pending"),
+  targetDate: calendarDateSchema.nullable().optional().default(null),
+});
+const milestoneUpdateSchema = milestoneCreateSchema
+  .partial()
+  .refine((input) => Object.keys(input).length > 0, {
+    message: "Provide at least one milestone value to update.",
+  });
 
 const planRequestSchema = z.object({
   planDate: calendarDateSchema,
@@ -294,6 +351,8 @@ export async function buildApp(
   const auth = new AuthService(database);
   const preferences = new PreferencesRepository(database);
   const calendarEvents = new CalendarEventRepository(database, preferences);
+  const projects = new ProjectRepository(database);
+  const goals = new GoalRepository(database);
   const tasks = new TaskRepository(database);
   const sessions = new FocusSessionRepository(database, tasks);
   const plans = new PlanRepository(database, tasks, preferences);
@@ -504,12 +563,148 @@ export async function buildApp(
     },
   );
 
+  app.get(
+    "/api/v1/projects",
+    { preHandler: protectedRead },
+    async (request) => ({
+      items: projects.list(requireAuthentication(request).user.id),
+    }),
+  );
+
+  app.get(
+    "/api/v1/projects/:projectId",
+    { preHandler: protectedRead },
+    async (request) => {
+      const { projectId } = parse(projectIdSchema, request.params);
+      return projects.get(projectId, requireAuthentication(request).user.id);
+    },
+  );
+
+  app.post(
+    "/api/v1/projects",
+    { preHandler: protectedWrite },
+    async (request, reply) => {
+      const context = requireWriteAuthentication(request, auth);
+      const input = parse(projectCreateSchema, request.body);
+      return reply.code(201).send(projects.create(input, context.user.id));
+    },
+  );
+
+  app.patch(
+    "/api/v1/projects/:projectId",
+    { preHandler: protectedWrite },
+    async (request) => {
+      const context = requireWriteAuthentication(request, auth);
+      const { projectId } = parse(projectIdSchema, request.params);
+      const input = parse(projectUpdateSchema, request.body);
+      return projects.update(projectId, input, context.user.id);
+    },
+  );
+
+  app.delete(
+    "/api/v1/projects/:projectId",
+    { preHandler: protectedWrite },
+    async (request, reply) => {
+      const context = requireWriteAuthentication(request, auth);
+      const { projectId } = parse(projectIdSchema, request.params);
+      projects.delete(projectId, context.user.id);
+      return reply.code(204).send();
+    },
+  );
+
+  app.get("/api/v1/goals", { preHandler: protectedRead }, async (request) => ({
+    items: goals.list(requireAuthentication(request).user.id),
+  }));
+
+  app.get(
+    "/api/v1/goals/:goalId",
+    { preHandler: protectedRead },
+    async (request) => {
+      const { goalId } = parse(goalIdSchema, request.params);
+      return goals.get(goalId, requireAuthentication(request).user.id);
+    },
+  );
+
+  app.post(
+    "/api/v1/goals",
+    { preHandler: protectedWrite },
+    async (request, reply) => {
+      const context = requireWriteAuthentication(request, auth);
+      const input = parse(goalCreateSchema, request.body);
+      return reply.code(201).send(goals.create(input, context.user.id));
+    },
+  );
+
+  app.patch(
+    "/api/v1/goals/:goalId",
+    { preHandler: protectedWrite },
+    async (request) => {
+      const context = requireWriteAuthentication(request, auth);
+      const { goalId } = parse(goalIdSchema, request.params);
+      const input = parse(goalUpdateSchema, request.body);
+      return goals.update(goalId, input, context.user.id);
+    },
+  );
+
+  app.delete(
+    "/api/v1/goals/:goalId",
+    { preHandler: protectedWrite },
+    async (request, reply) => {
+      const context = requireWriteAuthentication(request, auth);
+      const { goalId } = parse(goalIdSchema, request.params);
+      goals.delete(goalId, context.user.id);
+      return reply.code(204).send();
+    },
+  );
+
+  app.post(
+    "/api/v1/goals/:goalId/milestones",
+    { preHandler: protectedWrite },
+    async (request, reply) => {
+      const context = requireWriteAuthentication(request, auth);
+      const { goalId } = parse(goalIdSchema, request.params);
+      const input = parse(milestoneCreateSchema, request.body);
+      return reply
+        .code(201)
+        .send(goals.createMilestone(goalId, input, context.user.id));
+    },
+  );
+
+  app.patch(
+    "/api/v1/goals/:goalId/milestones/:milestoneId",
+    { preHandler: protectedWrite },
+    async (request) => {
+      const context = requireWriteAuthentication(request, auth);
+      const { goalId, milestoneId } = parse(
+        goalIdSchema.merge(milestoneIdSchema),
+        request.params,
+      );
+      const input = parse(milestoneUpdateSchema, request.body);
+      return goals.updateMilestone(goalId, milestoneId, input, context.user.id);
+    },
+  );
+
+  app.delete(
+    "/api/v1/goals/:goalId/milestones/:milestoneId",
+    { preHandler: protectedWrite },
+    async (request, reply) => {
+      const context = requireWriteAuthentication(request, auth);
+      const { goalId, milestoneId } = parse(
+        goalIdSchema.merge(milestoneIdSchema),
+        request.params,
+      );
+      goals.deleteMilestone(goalId, milestoneId, context.user.id);
+      return reply.code(204).send();
+    },
+  );
+
   app.get("/api/v1/tasks", { preHandler: protectedRead }, async (request) => {
     const context = requireAuthentication(request);
     const query = parse(
       z.object({
         status: taskStatusSchema.optional(),
         q: z.string().trim().max(120).optional(),
+        goalId: z.string().uuid().optional(),
       }),
       request.query,
     );
@@ -517,6 +712,7 @@ export async function buildApp(
       items: tasks.list(context.user.id, {
         status: query.status as TaskStatus | undefined,
         search: query.q,
+        goalId: query.goalId,
       }),
     };
   });

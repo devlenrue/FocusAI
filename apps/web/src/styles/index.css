@@ -1,3 +1,5 @@
+@import "./goals.css";
+
 :root {
   --void: #080b12;
   --void-soft: #0b0f18;
@@ -2165,7 +2167,7 @@ p {
     bottom: 10px;
     left: 10px;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     padding: 5px;
     border: 1px solid rgba(135, 183, 218, 0.21);
     border-radius: 15px;

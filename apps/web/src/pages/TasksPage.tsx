@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Check,
   ChevronRight,
@@ -73,6 +73,11 @@ function TaskItem({
           {task.parentTaskId && !task.isDecomposed && (
             <span className="task-relationship-pill step">Step</span>
           )}
+          {task.goalTitle && (
+            <span className="task-goal-pill" title={task.goalTitle}>
+              {task.goalTitle}
+            </span>
+          )}
           <PriorityPill priority={task.priority} />
         </div>
         {task.description && (
@@ -118,6 +123,8 @@ function TaskItem({
 
 export function TasksPage() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const goalId = searchParams.get("goalId") ?? undefined;
   const [search, setSearch] = useState("");
   const [view, setView] = useState<ViewFilter>("all");
   const [isCaptureOpen, setCaptureOpen] = useState(false);
@@ -125,8 +132,15 @@ export function TasksPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const tasksQuery = useQuery({
-    queryKey: ["tasks", { search }],
-    queryFn: () => api.getTasks({ q: search || undefined }),
+    queryKey: ["tasks", { search, goalId }],
+    queryFn: () =>
+      api.getTasks({ q: search || undefined, goalId: goalId || undefined }),
+  });
+  const linkedGoalQuery = useQuery({
+    queryKey: ["goal", goalId],
+    queryFn: () => api.getGoal(goalId ?? ""),
+    enabled: Boolean(goalId),
+    retry: false,
   });
   const completeTask = useMutation({
     mutationFn: ({
@@ -140,6 +154,7 @@ export function TasksPage() {
       setActionError(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["tasks"] }),
+        queryClient.invalidateQueries({ queryKey: ["goals"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["plan"] }),
       ]);
@@ -152,6 +167,7 @@ export function TasksPage() {
       setActionError(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["tasks"] }),
+        queryClient.invalidateQueries({ queryKey: ["goals"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["plan"] }),
       ]);
@@ -205,6 +221,38 @@ export function TasksPage() {
           <CirclePlus size={17} /> Capture task
         </button>
       </section>
+
+      {goalId && (
+        <section className="task-goal-filter" aria-label="Goal task filter">
+          <div>
+            <span className="eyebrow">LINKED GOAL WORK</span>
+            <strong>
+              {linkedGoalQuery.data?.title ??
+                (linkedGoalQuery.isError
+                  ? "The linked goal is unavailable."
+                  : "Loading selected goal…")}
+            </strong>
+            <p>
+              This view shows only tasks explicitly linked to this goal. Task
+              completion updates its recorded progress; it does not fabricate
+              analytics.
+            </p>
+          </div>
+          <button
+            className="button button-quiet button-small"
+            type="button"
+            onClick={() => {
+              setSearchParams((current) => {
+                const next = new URLSearchParams(current);
+                next.delete("goalId");
+                return next;
+              });
+            }}
+          >
+            <X size={15} /> Clear goal filter
+          </button>
+        </section>
+      )}
 
       <section className="task-toolbar panel" aria-label="Task filters">
         <label className="search-control">

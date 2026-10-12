@@ -8,7 +8,7 @@ export interface SchemaMigration {
  * order; existing local workspaces receive only the versions they do not yet
  * have, preserving prior task, plan, and focus history.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const schemaV1Sql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -157,8 +157,53 @@ ALTER TABLE tasks ADD COLUMN is_decomposed INTEGER NOT NULL DEFAULT 0 CHECK (is_
 CREATE INDEX IF NOT EXISTS idx_tasks_user_parent ON tasks(user_id, parent_task_id, updated_at DESC);
 `;
 
+const schemaV4Sql = `
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL CHECK (length(trim(title)) > 0 AND length(title) <= 200),
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
+  target_date TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_projects_user_status_target ON projects(user_id, status, target_date, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS goals (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  title TEXT NOT NULL CHECK (length(trim(title)) > 0 AND length(title) <= 200),
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'archived')),
+  target_date TEXT,
+  completed_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_goals_user_status_target ON goals(user_id, status, target_date, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_goals_project_status ON goals(project_id, status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS milestones (
+  id TEXT PRIMARY KEY,
+  goal_id TEXT NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+  title TEXT NOT NULL CHECK (length(trim(title)) > 0 AND length(title) <= 200),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed')),
+  target_date TEXT,
+  completed_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_milestones_goal_status_target ON milestones(goal_id, status, target_date, created_at);
+
+ALTER TABLE tasks ADD COLUMN goal_id TEXT REFERENCES goals(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_user_goal ON tasks(user_id, goal_id, updated_at DESC);
+`;
+
 export const migrations: readonly SchemaMigration[] = [
   { version: 1, sql: schemaV1Sql },
   { version: 2, sql: schemaV2Sql },
   { version: 3, sql: schemaV3Sql },
+  { version: 4, sql: schemaV4Sql },
 ];

@@ -9,6 +9,7 @@ import {
   LogOut,
   Plus,
   Sparkles,
+  Target,
   Timer,
 } from "lucide-react";
 import type { AuthUser } from "@/lib/types";
@@ -18,6 +19,7 @@ import { NewTaskModal } from "./NewTaskModal";
 const navigation = [
   { to: "/", label: "Command center", icon: LayoutDashboard, end: true },
   { to: "/tasks", label: "Task workspace", icon: CheckSquare2 },
+  { to: "/goals", label: "Goals & milestones", icon: Target },
   { to: "/plan", label: "Planning studio", icon: CalendarDays },
   { to: "/schedule", label: "Schedule & capacity", icon: CalendarClock },
   { to: "/focus", label: "Focus studio", icon: Timer },
@@ -26,6 +28,7 @@ const navigation = [
 const titleByPath: Record<string, string> = {
   "/": "Command center",
   "/tasks": "Task workspace",
+  "/goals": "Goals & milestones",
   "/plan": "Planning studio",
   "/schedule": "Schedule & capacity",
   "/focus": "Focus studio",

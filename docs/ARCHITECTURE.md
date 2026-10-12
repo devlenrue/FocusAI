@@ -21,7 +21,7 @@ This is an additive foundation, not a claim that every future module already exi
                                               │                       │                        │
                                    ┌──────────▼──────────┐ ┌──────────▼──────────┐ ┌────────▼───────┐
                                    │ repositories        │ │ decision engine     │ │ local SQLite    │
-                                   │ task / plan / focus │ │ pure TS package     │ │ schema/migrate  │
+                                   │ task / goal / plan  │ │ pure TS package     │ │ schema/migrate  │
                                    └─────────────────────┘ └─────────────────────┘ └────────────────┘
 ```
 
@@ -31,16 +31,16 @@ The web client uses `/api/v1/*`, never `localhost` or a hard-coded remote API ho
 
 ### Server modules
 
-| Module                                  | Responsibility                                                                                                                                   |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `apps/api/src/app.ts`                   | Fastify construction, opaque cookie/session wiring, CSRF guard, rate limits, headers/CORS, OpenAPI UI, routes, consistent errors and request IDs |
-| `apps/api/src/services/auth.ts`         | Registration/sign-in, opaque session issue/rotation/revocation, ownership context, minimal audit events, legacy local-data claim                 |
-| `apps/api/src/security/passwords.ts`    | Memory-hard scrypt hashing and constant-time password verification                                                                               |
-| `apps/api/src/db/database.ts`           | Local connection lifecycle, migration ledger, foreign-key/WAL pragmas, transaction wrapper                                                       |
-| `apps/api/src/db/schema.ts`             | Versioned current schema definition                                                                                                              |
-| `apps/api/src/services/repositories.ts` | Repository/service boundaries for preferences, owned calendar events, tasks, focus sessions, plans, and dashboard aggregation                    |
-| `apps/api/src/services/time.ts`         | IANA zone validation plus Temporal-backed local-wall-time ↔ UTC conversion with daylight-saving ambiguity rejection                              |
-| `packages/decision-engine`              | Pure ranking/scheduling/recovery rules; no HTTP, database, or provider dependency                                                                |
+| Module                                  | Responsibility                                                                                                                                           |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/api/src/app.ts`                   | Fastify construction, opaque cookie/session wiring, CSRF guard, rate limits, headers/CORS, OpenAPI UI, routes, consistent errors and request IDs         |
+| `apps/api/src/services/auth.ts`         | Registration/sign-in, opaque session issue/rotation/revocation, ownership context, minimal audit events, legacy local-data claim                         |
+| `apps/api/src/security/passwords.ts`    | Memory-hard scrypt hashing and constant-time password verification                                                                                       |
+| `apps/api/src/db/database.ts`           | Local connection lifecycle, migration ledger, foreign-key/WAL pragmas, transaction wrapper                                                               |
+| `apps/api/src/db/schema.ts`             | Versioned current schema definition                                                                                                                      |
+| `apps/api/src/services/repositories.ts` | Repository/service boundaries for owned projects/goals/milestones, preferences, calendar events, tasks, focus sessions, plans, and dashboard aggregation |
+| `apps/api/src/services/time.ts`         | IANA zone validation plus Temporal-backed local-wall-time ↔ UTC conversion with daylight-saving ambiguity rejection                                      |
+| `packages/decision-engine`              | Pure ranking/scheduling/recovery rules; no HTTP, database, or provider dependency                                                                        |
 
 ## Why the decision engine is separate
 
@@ -88,7 +88,13 @@ Calendar event CRUD is server-owned like every other workspace record. `is_fixed
 
 The Task Workspace keeps rapid capture separate from richer editing. An editor can update every supported task field and owned prerequisite list. Repository writes validate ownership for every referenced dependency and reject self-dependencies, dependency cycles, and breakdown containers as prerequisites.
 
-A breakdown is intentionally **not** automatic or AI-generated. The client holds locally reviewed step drafts until the user presses the explicit confirmation control. `POST /tasks/:taskId/decompose` then runs one owned transaction: it creates the supplied child tasks and marks the parent `is_decomposed = true`. The parent remains in task history/context, while both `PlanRepository` and dashboard ranking remove it from new planning candidates. Focus starts reject the container. This avoids booking an aggregate task alongside the actual steps without rewriting historical accepted plans or blocks. Child steps are normal tasks: users can edit their fields/dependencies after creation. Deleting a container preserves those child records by setting their parent reference to null.
+A breakdown is intentionally **not** automatic or AI-generated. The client holds locally reviewed step drafts until the user presses the explicit confirmation control. `POST /tasks/:taskId/decompose` then runs one owned transaction: it creates the supplied child tasks and marks the parent `is_decomposed = true`. The parent remains in task history/context, while both `PlanRepository` and dashboard ranking remove it from new planning candidates. Focus starts reject the container. This avoids booking an aggregate task alongside the actual steps without rewriting historical accepted plans or blocks. Child steps are normal tasks: users can edit their fields/dependencies after creation. Their goal link is inherited from the parent server-side, while their user-authored goal-alignment score is unchanged. Deleting a container preserves those child records by setting their parent reference to null.
+
+## Projects, goals, and milestones boundary
+
+The Goals & Milestones workspace persists user-owned projects, goals, and milestones rather than presenting inferred or sample goal progress. A project optionally groups goals; deleting it releases its goals rather than deleting them. A goal may link real owned tasks and explicit milestones. Deleting a goal releases task links and cascades only its milestones.
+
+Lifecycle checks are server-side: new/moved goals need an active project, new task links and milestone edits need an active goal, and a goal cannot complete while persisted non-container task work or milestones remain unfinished. Existing completed task history can remain linked to a completed/archived goal, but work cannot be silently reopened under a completed goal. `goal_alignment` remains a separate numeric decision-engine input: linking a goal never changes planner ranking, drafts, or accepted schedules automatically.
 
 ## Manual daily-draft scheduling boundary
 
@@ -122,24 +128,26 @@ When a session pauses or ends, the server calculates the elapsed interval from `
 
 ## Web UX foundations
 
-The web app starts at a real registration/sign-in gate, then intentionally exposes only five implemented workspace navigation surfaces:
+The web app starts at a real registration/sign-in gate, then intentionally exposes six implemented workspace navigation surfaces:
 
 1. **Command center** — real task counts, persisted top priorities, next action, plan blocks, and focus status.
-2. **Task workspace** — rapid capture plus full task editing, owned dependencies, user-confirmed step breakdown, search/filter, completion/deletion, and focus on actionable tasks.
-3. **Planning studio** — plan input, draft generation, capacity/deferred explanation, explicit feasible daily-draft time adjustment/reordering, approval, and recovery recalculation in the configured time zone.
-4. **Schedule & capacity** — IANA zone/working-window/recovery-cap settings and owned commitment CRUD with an explicit fixed/flexible distinction.
-5. **Focus studio** — session setup/control/history backed by the API.
+2. **Task workspace** — rapid capture plus full task editing, explicit optional goal links, owned dependencies, user-confirmed step breakdown, search/filter, completion/deletion, and focus on actionable tasks.
+3. **Goals & milestones** — owned project/goal/milestone CRUD, factual task/milestone progress, lifecycle feedback, and linked-task filtering.
+4. **Planning studio** — plan input, draft generation, capacity/deferred explanation, explicit feasible daily-draft time adjustment/reordering, approval, and recovery recalculation in the configured time zone.
+5. **Schedule & capacity** — IANA zone/working-window/recovery-cap settings and owned commitment CRUD with an explicit fixed/flexible distinction.
+6. **Focus studio** — session setup/control/history backed by the API.
 
 The empty, error, loading, disabled, confirmation, and success states are part of these flows. Unsupported modules are documented rather than added as dead navigation items.
 
 ## Known architectural risks
 
-| Risk                                      | Current mitigation                                                                             | Planned resolution                                                           |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `node:sqlite` is experimental in Node 22  | Isolated behind one adapter; test database injection                                           | Supported production driver/ORM in production hardening                      |
-| Local adapter is not a hosted deployment  | Auth/ownership/CSRF work in local mode, with explicit `/meta` disclosure                       | Production database, HTTPS/proxy, email, backup and monitoring configuration |
-| DST/local-time edge cases                 | Server validates IANA zones and rejects ambiguous/nonexistent local times                      | Broader time-zone/DST E2E coverage and explicit user disambiguation choices  |
-| Calendar is manual, not connected         | Owned local event CRUD and fixed-capacity subtraction are real                                 | External authorization/sync, recurrence, conflict guidance                   |
-| Breakdown metadata is local and one-level | Explicit user confirmation, atomic child creation, and parent exclusion prevent double-booking | Add recurrence/tags and, only if justified, richer hierarchy rules           |
-| Manual schedule adjustment is draft-only  | Complete-draft server validation preserves feasibility and accepted/recovery history           | Consider multi-day/block-splitting only with explicit conflict-resolution UX |
-| No optional LLM provider                  | Deterministic engine fully works alone                                                         | Provider interface, timeout/privacy/schema controls                          |
+| Risk                                      | Current mitigation                                                                                                  | Planned resolution                                                           |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `node:sqlite` is experimental in Node 22  | Isolated behind one adapter; test database injection                                                                | Supported production driver/ORM in production hardening                      |
+| Local adapter is not a hosted deployment  | Auth/ownership/CSRF work in local mode, with explicit `/meta` disclosure                                            | Production database, HTTPS/proxy, email, backup and monitoring configuration |
+| DST/local-time edge cases                 | Server validates IANA zones and rejects ambiguous/nonexistent local times                                           | Broader time-zone/DST E2E coverage and explicit user disambiguation choices  |
+| Calendar is manual, not connected         | Owned local event CRUD and fixed-capacity subtraction are real                                                      | External authorization/sync, recurrence, conflict guidance                   |
+| Breakdown metadata is local and one-level | Explicit user confirmation, atomic child creation, inherited goal link, and parent exclusion prevent double-booking | Add recurrence/tags and, only if justified, richer hierarchy rules           |
+| Goal context is not planner logic         | Goal links and factual progress are persisted, but `goal_alignment` deliberately remains a separate planner signal  | Define goal-aware planning/analytics only with explicit behavior and tests   |
+| Manual schedule adjustment is draft-only  | Complete-draft server validation preserves feasibility and accepted/recovery history                                | Consider multi-day/block-splitting only with explicit conflict-resolution UX |
+| No optional LLM provider                  | Deterministic engine fully works alone                                                                              | Provider interface, timeout/privacy/schema controls                          |

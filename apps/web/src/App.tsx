@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { AuthPage } from "@/pages/AuthPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { FocusPage } from "@/pages/FocusPage";
+import { GoalsPage } from "@/pages/GoalsPage";
 import { PlanPage } from "@/pages/PlanPage";
 import { SchedulePage } from "@/pages/SchedulePage";
 import { TasksPage } from "@/pages/TasksPage";
@@ -39,6 +40,10 @@ export function App() {
     mutationFn: api.logout,
     onSuccess: () => {
       queryClient.removeQueries({ queryKey: ["dashboard"] });
+      queryClient.removeQueries({ queryKey: ["projects"] });
+      queryClient.removeQueries({ queryKey: ["project"] });
+      queryClient.removeQueries({ queryKey: ["goals"] });
+      queryClient.removeQueries({ queryKey: ["goal"] });
       queryClient.removeQueries({ queryKey: ["tasks"] });
       queryClient.removeQueries({ queryKey: ["plan"] });
       queryClient.removeQueries({ queryKey: ["focus"] });
@@ -87,6 +92,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/tasks" element={<TasksPage />} />
+        <Route path="/goals" element={<GoalsPage />} />
         <Route path="/plan" element={<PlanPage />} />
         <Route path="/schedule" element={<SchedulePage />} />
         <Route path="/focus" element={<FocusPage />} />

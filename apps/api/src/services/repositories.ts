@@ -24,6 +24,9 @@ import {
 } from "./time.js";
 
 export type TaskStatus = "backlog" | "todo" | "in_progress" | "done";
+export type ProjectStatus = "active" | "archived";
+export type GoalStatus = "active" | "completed" | "archived";
+export type MilestoneStatus = "pending" | "completed";
 
 export interface TaskDto {
   id: string;
@@ -36,7 +39,11 @@ export interface TaskDto {
   actualMinutes: number;
   dueAt: string | null;
   cognitiveLoad: CognitiveLoad;
+  /** A user-controlled planning signal; linking a goal does not rewrite it. */
   goalAlignment: number;
+  /** Nullable user-owned goal relationship, independent of planner scoring. */
+  goalId: string | null;
+  goalTitle: string | null;
   blocked: boolean;
   /** A child task belongs to this explicit, user-confirmed breakdown parent. */
   parentTaskId: string | null;
@@ -52,6 +59,7 @@ export type TaskCreateInput = Omit<
   TaskDto,
   | "id"
   | "actualMinutes"
+  | "goalTitle"
   | "parentTaskId"
   | "isDecomposed"
   | "createdAt"
@@ -64,6 +72,7 @@ export type TaskUpdateInput = Partial<
     TaskDto,
     | "id"
     | "actualMinutes"
+    | "goalTitle"
     | "parentTaskId"
     | "isDecomposed"
     | "createdAt"
@@ -155,6 +164,73 @@ export interface CalendarEventInput {
   isFixed: boolean;
 }
 
+export interface ProjectDto {
+  id: string;
+  title: string;
+  description: string | null;
+  status: ProjectStatus;
+  targetDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  progress: {
+    totalGoals: number;
+    completedGoals: number;
+    activeGoals: number;
+  };
+}
+
+export interface ProjectInput {
+  title: string;
+  description: string | null;
+  status: ProjectStatus;
+  targetDate: string | null;
+}
+
+export interface MilestoneDto {
+  id: string;
+  goalId: string;
+  title: string;
+  status: MilestoneStatus;
+  targetDate: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MilestoneInput {
+  title: string;
+  status: MilestoneStatus;
+  targetDate: string | null;
+}
+
+export interface GoalDto {
+  id: string;
+  projectId: string | null;
+  projectTitle: string | null;
+  title: string;
+  description: string | null;
+  status: GoalStatus;
+  targetDate: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  progress: {
+    totalTasks: number;
+    completedTasks: number;
+    totalMilestones: number;
+    completedMilestones: number;
+  };
+  milestones: MilestoneDto[];
+}
+
+export interface GoalInput {
+  projectId: string | null;
+  title: string;
+  description: string | null;
+  status: GoalStatus;
+  targetDate: string | null;
+}
+
 export class NotFoundError extends Error {}
 export class ConflictError extends Error {}
 
@@ -170,6 +246,8 @@ interface TaskRow {
   due_at: string | null;
   cognitive_load: CognitiveLoad;
   goal_alignment: number;
+  goal_id: string | null;
+  goal_title: string | null;
   blocked: number;
   parent_task_id: string | null;
   is_decomposed: number;
@@ -243,6 +321,40 @@ interface EventRow {
   updated_at: string;
 }
 
+interface ProjectRow {
+  id: string;
+  title: string;
+  description: string | null;
+  status: ProjectStatus;
+  target_date: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface GoalRow {
+  id: string;
+  project_id: string | null;
+  project_title: string | null;
+  title: string;
+  description: string | null;
+  status: GoalStatus;
+  target_date: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface MilestoneRow {
+  id: string;
+  goal_id: string;
+  title: string;
+  status: MilestoneStatus;
+  target_date: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 interface EditableScheduleContext {
   version: 1;
   availability: AvailabilityWindow[];
@@ -292,6 +404,35 @@ function rowToCalendarEvent(row: EventRow, timezone: string): CalendarEventDto {
   };
 }
 
+function rowToProject(
+  row: ProjectRow,
+  progress: ProjectDto["progress"],
+): ProjectDto {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    status: row.status,
+    targetDate: row.target_date,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    progress,
+  };
+}
+
+function rowToMilestone(row: MilestoneRow): MilestoneDto {
+  return {
+    id: row.id,
+    goalId: row.goal_id,
+    title: row.title,
+    status: row.status,
+    targetDate: row.target_date,
+    completedAt: row.completed_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function rowToTask(row: TaskRow, dependencies: string[]): TaskDto {
   return {
     id: row.id,
@@ -305,6 +446,8 @@ function rowToTask(row: TaskRow, dependencies: string[]): TaskDto {
     dueAt: row.due_at,
     cognitiveLoad: row.cognitive_load,
     goalAlignment: row.goal_alignment,
+    goalId: row.goal_id,
+    goalTitle: row.goal_title,
     blocked: row.blocked === 1,
     parentTaskId: row.parent_task_id,
     isDecomposed: row.is_decomposed === 1,
@@ -586,33 +729,475 @@ export class CalendarEventRepository {
   }
 }
 
+export class ProjectRepository {
+  constructor(private readonly database: FocusDatabase) {}
+
+  list(userId: string): ProjectDto[] {
+    return this.database
+      .all<ProjectRow>(
+        `SELECT id, title, description, status, target_date, created_at, updated_at
+         FROM projects WHERE user_id = ?
+         ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END,
+                  target_date IS NULL, target_date ASC, updated_at DESC`,
+        [userId],
+      )
+      .map((row) => this.toDto(row));
+  }
+
+  get(projectId: string, userId: string): ProjectDto {
+    return this.toDto(this.rowForUser(projectId, userId));
+  }
+
+  create(input: ProjectInput, userId: string): ProjectDto {
+    const id = randomUUID();
+    const now = nowIso();
+    this.database.run(
+      `INSERT INTO projects(
+        id, user_id, title, description, status, target_date, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        userId,
+        input.title.trim(),
+        input.description,
+        input.status,
+        input.targetDate,
+        now,
+        now,
+      ],
+    );
+    return this.get(id, userId);
+  }
+
+  update(
+    projectId: string,
+    input: Partial<ProjectInput>,
+    userId: string,
+  ): ProjectDto {
+    this.rowForUser(projectId, userId);
+    const fields: string[] = [];
+    const values: Array<string | number | null> = [];
+    const mapping: Array<
+      [keyof ProjectInput, string, (value: never) => string | null]
+    > = [
+      ["title", "title", (value) => String(value).trim()],
+      [
+        "description",
+        "description",
+        (value) => (value === undefined ? null : (value as string | null)),
+      ],
+      ["status", "status", (value) => String(value)],
+      [
+        "targetDate",
+        "target_date",
+        (value) => (value === undefined ? null : (value as string | null)),
+      ],
+    ];
+    for (const [key, column, transform] of mapping) {
+      if (input[key] !== undefined) {
+        fields.push(`${column} = ?`);
+        values.push(transform(input[key] as never));
+      }
+    }
+    fields.push("updated_at = ?");
+    values.push(nowIso(), projectId, userId);
+    this.database.run(
+      `UPDATE projects SET ${fields.join(", ")} WHERE id = ? AND user_id = ?`,
+      values,
+    );
+    return this.get(projectId, userId);
+  }
+
+  delete(projectId: string, userId: string): void {
+    this.rowForUser(projectId, userId);
+    this.database.run("DELETE FROM projects WHERE id = ? AND user_id = ?", [
+      projectId,
+      userId,
+    ]);
+  }
+
+  private rowForUser(projectId: string, userId: string): ProjectRow {
+    const row = this.database.get<ProjectRow>(
+      `SELECT id, title, description, status, target_date, created_at, updated_at
+       FROM projects WHERE id = ? AND user_id = ?`,
+      [projectId, userId],
+    );
+    if (!row) throw new NotFoundError("Project not found.");
+    return row;
+  }
+
+  private toDto(row: ProjectRow): ProjectDto {
+    const progress = this.database.get<{
+      total_goals: number;
+      completed_goals: number;
+      active_goals: number;
+    }>(
+      `SELECT COUNT(*) AS total_goals,
+              SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_goals,
+              SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_goals
+       FROM goals WHERE project_id = ?`,
+      [row.id],
+    );
+    return rowToProject(row, {
+      totalGoals: progress?.total_goals ?? 0,
+      completedGoals: progress?.completed_goals ?? 0,
+      activeGoals: progress?.active_goals ?? 0,
+    });
+  }
+}
+
+export class GoalRepository {
+  constructor(private readonly database: FocusDatabase) {}
+
+  list(userId: string): GoalDto[] {
+    return this.database
+      .all<GoalRow>(
+        `SELECT g.id, g.project_id, p.title AS project_title, g.title, g.description, g.status,
+                g.target_date, g.completed_at, g.created_at, g.updated_at
+         FROM goals g
+         LEFT JOIN projects p ON p.id = g.project_id AND p.user_id = g.user_id
+         WHERE g.user_id = ?
+         ORDER BY CASE g.status WHEN 'active' THEN 0 WHEN 'completed' THEN 1 ELSE 2 END,
+                  g.target_date IS NULL, g.target_date ASC, g.updated_at DESC`,
+        [userId],
+      )
+      .map((row) => this.toDto(row));
+  }
+
+  get(goalId: string, userId: string): GoalDto {
+    return this.toDto(this.rowForUser(goalId, userId));
+  }
+
+  create(input: GoalInput, userId: string): GoalDto {
+    this.assertProjectCanContainGoal(input.projectId, userId, null);
+    const id = randomUUID();
+    const now = nowIso();
+    this.database.run(
+      `INSERT INTO goals(
+        id, user_id, project_id, title, description, status, target_date, completed_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        userId,
+        input.projectId,
+        input.title.trim(),
+        input.description,
+        input.status,
+        input.targetDate,
+        input.status === "completed" ? now : null,
+        now,
+        now,
+      ],
+    );
+    return this.get(id, userId);
+  }
+
+  update(goalId: string, input: Partial<GoalInput>, userId: string): GoalDto {
+    return this.database.transaction(() => {
+      const current = this.rowForUser(goalId, userId);
+      if (input.projectId !== undefined) {
+        this.assertProjectCanContainGoal(
+          input.projectId,
+          userId,
+          current.project_id,
+        );
+      }
+      if (input.status === "completed" && current.status !== "completed") {
+        this.assertCanComplete(current, userId);
+      }
+
+      const fields: string[] = [];
+      const values: Array<string | number | null> = [];
+      const mapping: Array<
+        [keyof GoalInput, string, (value: never) => string | null]
+      > = [
+        ["projectId", "project_id", (value) => value as string | null],
+        ["title", "title", (value) => String(value).trim()],
+        [
+          "description",
+          "description",
+          (value) => (value === undefined ? null : (value as string | null)),
+        ],
+        ["status", "status", (value) => String(value)],
+        [
+          "targetDate",
+          "target_date",
+          (value) => (value === undefined ? null : (value as string | null)),
+        ],
+      ];
+      for (const [key, column, transform] of mapping) {
+        if (input[key] !== undefined) {
+          fields.push(`${column} = ?`);
+          values.push(transform(input[key] as never));
+        }
+      }
+      if (input.status === "completed") {
+        fields.push("completed_at = COALESCE(completed_at, ?)");
+        values.push(nowIso());
+      } else if (input.status) {
+        fields.push("completed_at = NULL");
+      }
+      fields.push("updated_at = ?");
+      values.push(nowIso(), goalId, userId);
+      this.database.run(
+        `UPDATE goals SET ${fields.join(", ")} WHERE id = ? AND user_id = ?`,
+        values,
+      );
+      return this.get(goalId, userId);
+    });
+  }
+
+  delete(goalId: string, userId: string): void {
+    this.rowForUser(goalId, userId);
+    this.database.run("DELETE FROM goals WHERE id = ? AND user_id = ?", [
+      goalId,
+      userId,
+    ]);
+  }
+
+  createMilestone(
+    goalId: string,
+    input: MilestoneInput,
+    userId: string,
+  ): MilestoneDto {
+    const goal = this.rowForUser(goalId, userId);
+    this.assertMilestonesAreMutable(goal);
+    const id = randomUUID();
+    const now = nowIso();
+    this.database.run(
+      `INSERT INTO milestones(
+        id, goal_id, title, status, target_date, completed_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        goalId,
+        input.title.trim(),
+        input.status,
+        input.targetDate,
+        input.status === "completed" ? now : null,
+        now,
+        now,
+      ],
+    );
+    return this.milestoneForGoal(id, goalId, userId);
+  }
+
+  updateMilestone(
+    goalId: string,
+    milestoneId: string,
+    input: Partial<MilestoneInput>,
+    userId: string,
+  ): MilestoneDto {
+    return this.database.transaction(() => {
+      const goal = this.rowForUser(goalId, userId);
+      this.assertMilestonesAreMutable(goal);
+      this.milestoneForGoal(milestoneId, goalId, userId);
+      const fields: string[] = [];
+      const values: Array<string | number | null> = [];
+      const mapping: Array<
+        [keyof MilestoneInput, string, (value: never) => string | null]
+      > = [
+        ["title", "title", (value) => String(value).trim()],
+        ["status", "status", (value) => String(value)],
+        [
+          "targetDate",
+          "target_date",
+          (value) => (value === undefined ? null : (value as string | null)),
+        ],
+      ];
+      for (const [key, column, transform] of mapping) {
+        if (input[key] !== undefined) {
+          fields.push(`${column} = ?`);
+          values.push(transform(input[key] as never));
+        }
+      }
+      if (input.status === "completed") {
+        fields.push("completed_at = COALESCE(completed_at, ?)");
+        values.push(nowIso());
+      } else if (input.status === "pending") {
+        fields.push("completed_at = NULL");
+      }
+      fields.push("updated_at = ?");
+      values.push(nowIso(), milestoneId, goalId);
+      this.database.run(
+        `UPDATE milestones SET ${fields.join(", ")} WHERE id = ? AND goal_id = ?`,
+        values,
+      );
+      return this.milestoneForGoal(milestoneId, goalId, userId);
+    });
+  }
+
+  deleteMilestone(goalId: string, milestoneId: string, userId: string): void {
+    const goal = this.rowForUser(goalId, userId);
+    this.assertMilestonesAreMutable(goal);
+    this.milestoneForGoal(milestoneId, goalId, userId);
+    this.database.run("DELETE FROM milestones WHERE id = ? AND goal_id = ?", [
+      milestoneId,
+      goalId,
+    ]);
+  }
+
+  private rowForUser(goalId: string, userId: string): GoalRow {
+    const row = this.database.get<GoalRow>(
+      `SELECT g.id, g.project_id, p.title AS project_title, g.title, g.description, g.status,
+              g.target_date, g.completed_at, g.created_at, g.updated_at
+       FROM goals g
+       LEFT JOIN projects p ON p.id = g.project_id AND p.user_id = g.user_id
+       WHERE g.id = ? AND g.user_id = ?`,
+      [goalId, userId],
+    );
+    if (!row) throw new NotFoundError("Goal not found.");
+    return row;
+  }
+
+  private milestoneForGoal(
+    milestoneId: string,
+    goalId: string,
+    userId: string,
+  ): MilestoneDto {
+    const row = this.database.get<MilestoneRow>(
+      `SELECT m.id, m.goal_id, m.title, m.status, m.target_date, m.completed_at, m.created_at, m.updated_at
+       FROM milestones m
+       INNER JOIN goals g ON g.id = m.goal_id
+       WHERE m.id = ? AND m.goal_id = ? AND g.user_id = ?`,
+      [milestoneId, goalId, userId],
+    );
+    if (!row) throw new NotFoundError("Milestone not found.");
+    return rowToMilestone(row);
+  }
+
+  private toDto(row: GoalRow): GoalDto {
+    const taskProgress = this.database.get<{
+      total_tasks: number;
+      completed_tasks: number;
+    }>(
+      `SELECT COUNT(*) AS total_tasks,
+              SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS completed_tasks
+       FROM tasks WHERE goal_id = ? AND is_decomposed = 0`,
+      [row.id],
+    );
+    const milestoneProgress = this.database.get<{
+      total_milestones: number;
+      completed_milestones: number;
+    }>(
+      `SELECT COUNT(*) AS total_milestones,
+              SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_milestones
+       FROM milestones WHERE goal_id = ?`,
+      [row.id],
+    );
+    const milestones = this.database
+      .all<MilestoneRow>(
+        `SELECT id, goal_id, title, status, target_date, completed_at, created_at, updated_at
+         FROM milestones WHERE goal_id = ?
+         ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END,
+                  target_date IS NULL, target_date ASC, created_at ASC`,
+        [row.id],
+      )
+      .map(rowToMilestone);
+    return {
+      id: row.id,
+      projectId: row.project_id,
+      projectTitle: row.project_title,
+      title: row.title,
+      description: row.description,
+      status: row.status,
+      targetDate: row.target_date,
+      completedAt: row.completed_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      progress: {
+        totalTasks: taskProgress?.total_tasks ?? 0,
+        completedTasks: taskProgress?.completed_tasks ?? 0,
+        totalMilestones: milestoneProgress?.total_milestones ?? 0,
+        completedMilestones: milestoneProgress?.completed_milestones ?? 0,
+      },
+      milestones,
+    };
+  }
+
+  private assertProjectCanContainGoal(
+    projectId: string | null,
+    userId: string,
+    currentProjectId: string | null,
+  ): void {
+    if (!projectId) return;
+    const project = this.database.get<{ status: ProjectStatus }>(
+      "SELECT status FROM projects WHERE id = ? AND user_id = ?",
+      [projectId, userId],
+    );
+    if (!project) throw new NotFoundError("Project not found.");
+    if (project.status !== "active" && projectId !== currentProjectId) {
+      throw new ConflictError(
+        "Choose an active project before adding a goal to it.",
+      );
+    }
+  }
+
+  private assertCanComplete(goal: GoalRow, userId: string): void {
+    const unfinishedTask = this.database.get<{ title: string }>(
+      `SELECT title FROM tasks
+       WHERE user_id = ? AND goal_id = ? AND is_decomposed = 0 AND status <> 'done'
+       LIMIT 1`,
+      [userId, goal.id],
+    );
+    if (unfinishedTask) {
+      throw new ConflictError(
+        `Finish or unlink “${unfinishedTask.title}” before completing this goal.`,
+      );
+    }
+    const pendingMilestone = this.database.get<{ title: string }>(
+      "SELECT title FROM milestones WHERE goal_id = ? AND status <> 'completed' LIMIT 1",
+      [goal.id],
+    );
+    if (pendingMilestone) {
+      throw new ConflictError(
+        `Complete or remove milestone “${pendingMilestone.title}” before completing this goal.`,
+      );
+    }
+  }
+
+  private assertMilestonesAreMutable(goal: GoalRow): void {
+    if (goal.status !== "active") {
+      throw new ConflictError(
+        "Reopen this goal before changing its milestones.",
+      );
+    }
+  }
+}
+
 export class TaskRepository {
   constructor(private readonly database: FocusDatabase) {}
 
   list(
     userId: string,
-    filters: { status?: TaskStatus; search?: string } = {},
+    filters: { status?: TaskStatus; search?: string; goalId?: string } = {},
   ): TaskDto[] {
-    const where = ["user_id = ?"];
+    const where = ["t.user_id = ?"];
     const parameters: Array<string | number | null> = [userId];
     if (filters.status) {
-      where.push("status = ?");
+      where.push("t.status = ?");
       parameters.push(filters.status);
+    }
+    if (filters.goalId) {
+      where.push("t.goal_id = ?");
+      parameters.push(filters.goalId);
     }
     if (filters.search) {
       where.push(
-        "(title LIKE ? COLLATE NOCASE OR description LIKE ? COLLATE NOCASE)",
+        "(t.title LIKE ? COLLATE NOCASE OR t.description LIKE ? COLLATE NOCASE)",
       );
       const term = `%${filters.search.trim()}%`;
       parameters.push(term, term);
     }
     const rows = this.database.all<TaskRow>(
-      `SELECT id, title, description, status, priority, impact, estimate_minutes, actual_minutes,
-              due_at, cognitive_load, goal_alignment, blocked, parent_task_id, is_decomposed,
-              created_at, updated_at, completed_at
-       FROM tasks WHERE ${where.join(" AND ")}
-       ORDER BY CASE status WHEN 'in_progress' THEN 0 WHEN 'todo' THEN 1 WHEN 'backlog' THEN 2 ELSE 3 END,
-                due_at IS NULL, due_at ASC, updated_at DESC`,
+      `SELECT t.id, t.title, t.description, t.status, t.priority, t.impact, t.estimate_minutes, t.actual_minutes,
+              t.due_at, t.cognitive_load, t.goal_alignment, t.goal_id, g.title AS goal_title, t.blocked,
+              t.parent_task_id, t.is_decomposed, t.created_at, t.updated_at, t.completed_at
+       FROM tasks t
+       LEFT JOIN goals g ON g.id = t.goal_id AND g.user_id = t.user_id
+       WHERE ${where.join(" AND ")}
+       ORDER BY CASE t.status WHEN 'in_progress' THEN 0 WHEN 'todo' THEN 1 WHEN 'backlog' THEN 2 ELSE 3 END,
+                t.due_at IS NULL, t.due_at ASC, t.updated_at DESC`,
       parameters,
     );
     return rows.map((row) => rowToTask(row, this.dependenciesForTask(row.id)));
@@ -620,10 +1205,12 @@ export class TaskRepository {
 
   get(taskId: string, userId: string): TaskDto {
     const row = this.database.get<TaskRow>(
-      `SELECT id, title, description, status, priority, impact, estimate_minutes, actual_minutes,
-              due_at, cognitive_load, goal_alignment, blocked, parent_task_id, is_decomposed,
-              created_at, updated_at, completed_at
-       FROM tasks WHERE id = ? AND user_id = ?`,
+      `SELECT t.id, t.title, t.description, t.status, t.priority, t.impact, t.estimate_minutes, t.actual_minutes,
+              t.due_at, t.cognitive_load, t.goal_alignment, t.goal_id, g.title AS goal_title, t.blocked,
+              t.parent_task_id, t.is_decomposed, t.created_at, t.updated_at, t.completed_at
+       FROM tasks t
+       LEFT JOIN goals g ON g.id = t.goal_id AND g.user_id = t.user_id
+       WHERE t.id = ? AND t.user_id = ?`,
       [taskId, userId],
     );
     if (!row) throw new NotFoundError("Task not found.");
@@ -659,6 +1246,9 @@ export class TaskRepository {
         );
       }
       this.assertHasNoDependents(taskId, userId);
+      // Steps preserve the parent’s explicit goal relationship; clients cannot
+      // silently redirect newly created work to a different goal.
+      this.assertGoalCanReceiveWork(parent.goalId, userId, null, "todo");
 
       const stepIds = steps.map((step) => {
         if (step.dependencies.includes(taskId)) {
@@ -666,7 +1256,11 @@ export class TaskRepository {
             "A step cannot depend on its breakdown parent. Choose an actionable dependency instead.",
           );
         }
-        return this.insertTask(step, userId, taskId);
+        return this.insertTask(
+          { ...step, goalId: parent.goalId },
+          userId,
+          taskId,
+        );
       });
       this.database.run(
         "UPDATE tasks SET is_decomposed = 1, updated_at = ? WHERE id = ? AND user_id = ?",
@@ -683,6 +1277,15 @@ export class TaskRepository {
     const current = this.get(taskId, userId);
     if (input.status === "done")
       this.assertContainerCanComplete(current, userId);
+    const nextGoalId =
+      input.goalId === undefined ? current.goalId : input.goalId;
+    const nextStatus = input.status ?? current.status;
+    this.assertGoalCanReceiveWork(
+      nextGoalId,
+      userId,
+      current.goalId,
+      nextStatus,
+    );
     const fields: string[] = [];
     const values: Array<string | number | null> = [];
     const mapping: Array<
@@ -706,6 +1309,7 @@ export class TaskRepository {
       ],
       ["cognitiveLoad", "cognitive_load", (value) => String(value)],
       ["goalAlignment", "goal_alignment", (value) => Number(value)],
+      ["goalId", "goal_id", (value) => value as string | null],
       ["blocked", "blocked", (value) => (value ? 1 : 0)],
     ];
 
@@ -764,6 +1368,31 @@ export class TaskRepository {
     ]);
   }
 
+  private assertGoalCanReceiveWork(
+    goalId: string | null,
+    userId: string,
+    currentGoalId: string | null,
+    nextStatus: TaskStatus,
+  ): void {
+    if (!goalId) return;
+    const goal = this.database.get<{ status: GoalStatus }>(
+      "SELECT status FROM goals WHERE id = ? AND user_id = ?",
+      [goalId, userId],
+    );
+    if (!goal) throw new NotFoundError("Goal not found.");
+    if (goal.status === "active") return;
+    if (goalId !== currentGoalId) {
+      throw new ConflictError(
+        "Choose an active goal before linking new work to it.",
+      );
+    }
+    if (goal.status === "completed" && nextStatus !== "done") {
+      throw new ConflictError(
+        "Reopen this goal before reopening one of its completed tasks.",
+      );
+    }
+  }
+
   private assertContainerCanComplete(task: TaskDto, userId: string): void {
     if (!task.isDecomposed) return;
     const unfinishedChild = this.database.get<{ title: string }>(
@@ -784,13 +1413,14 @@ export class TaskRepository {
     userId: string,
     parentTaskId: string | null,
   ): string {
+    this.assertGoalCanReceiveWork(input.goalId, userId, null, input.status);
     const id = randomUUID();
     const now = nowIso();
     this.database.run(
       `INSERT INTO tasks(
         id, user_id, title, description, status, priority, impact, estimate_minutes, actual_minutes,
-        due_at, cognitive_load, goal_alignment, blocked, parent_task_id, created_at, updated_at, completed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        due_at, cognitive_load, goal_alignment, goal_id, blocked, parent_task_id, created_at, updated_at, completed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         userId,
@@ -803,6 +1433,7 @@ export class TaskRepository {
         input.dueAt,
         input.cognitiveLoad,
         input.goalAlignment,
+        input.goalId,
         input.blocked ? 1 : 0,
         parentTaskId,
         now,

@@ -9,8 +9,11 @@ users 1 ─── 1 user_preferences
   │
   ├── * auth_sessions
   ├── * auth_audit_events
+  ├── * projects ─── 0..* goals ─── * milestones
+  ├── * goals (may have no project)
   ├── * tasks ─── * task_dependencies (task → prerequisite task)
   │       │
+  │       ├── 0..1 goal
   │       ├── 0..1 parent task (confirmed breakdown step → container)
   │       └── * scheduled_blocks
   │
@@ -30,7 +33,7 @@ All current tables use text UUID primary keys except the migration ledger. Every
 | `version`    | integer      | Primary key |
 | `applied_at` | UTC ISO text | Required    |
 
-The migration ledger is created before the rest of the schema is inspected. Current schema version: **3**. Version 2 adds authentication/session tables and user columns; version 3 adds task breakdown metadata and its ownership-oriented index. Both are additive and do not reset existing local records.
+The migration ledger is created before the rest of the schema is inspected. Current schema version: **4**. Version 2 adds authentication/session tables and user columns; version 3 adds task breakdown metadata and its ownership-oriented index; version 4 adds owned projects, goals, milestones, and nullable task goal links. Every version is additive and does not reset existing local records.
 
 ### `users`
 
@@ -79,6 +82,43 @@ One row per user, foreign-keyed to `users` with cascade deletion.
 | `high_cognitive_recovery_cap`          | 0–1, default 0.2; passed to recovery planning                                                                      |
 | audit timestamps                       | UTC ISO timestamps                                                                                                 |
 
+### `projects`
+
+| Column                     | Notes                                                           |
+| -------------------------- | --------------------------------------------------------------- |
+| `id`, `user_id`            | UUID/text primary key and owned user foreign key                |
+| `title`, `description`     | Nonblank title up to 200 characters and optional stored context |
+| `status`                   | `active` or `archived`                                          |
+| `target_date`              | Optional ISO calendar date                                      |
+| `created_at`, `updated_at` | UTC ISO timestamps                                              |
+
+A project is an optional grouping for a user’s goals. New or moved goals can only be attached to an active project. Deleting a project preserves its goals by setting their `project_id` to null.
+
+### `goals`
+
+| Column                        | Notes                                                                   |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| `id`, `user_id`               | UUID/text primary key and owned user foreign key                        |
+| `project_id`                  | Nullable project FK; set null when the grouping project is deleted      |
+| `title`, `description`        | Nonblank title up to 200 characters and optional stored outcome context |
+| `status`                      | `active`, `completed`, or `archived`                                    |
+| `target_date`, `completed_at` | Optional ISO calendar date and completion timestamp                     |
+| `created_at`, `updated_at`    | UTC ISO timestamps                                                      |
+
+Goals are explicit context records, not inferred planner classifications. New task links and milestone edits require an active goal. A goal cannot move to `completed` while it has unfinished non-container linked tasks or pending milestones. Deleting a goal preserves linked tasks by setting `tasks.goal_id` to null and cascades only its milestones.
+
+### `milestones`
+
+| Column                        | Notes                                                             |
+| ----------------------------- | ----------------------------------------------------------------- |
+| `id`, `goal_id`               | UUID/text primary key and required cascade-owned goal foreign key |
+| `title`                       | Nonblank title up to 200 characters                               |
+| `status`                      | `pending` or `completed`                                          |
+| `target_date`, `completed_at` | Optional ISO calendar date and completion timestamp               |
+| `created_at`, `updated_at`    | UTC ISO timestamps                                                |
+
+Milestones are reviewable goal checkpoints, not automatically generated subtasks. They are mutable only while their goal is active.
+
 ### `tasks`
 
 | Column                                | Notes                                                                                                               |
@@ -92,13 +132,14 @@ One row per user, foreign-keyed to `users` with cascade deletion.
 | `actual_minutes`                      | Non-negative accumulated effort field                                                                               |
 | `due_at`                              | Nullable UTC ISO timestamp                                                                                          |
 | `cognitive_load`                      | `low`, `medium`, `high`                                                                                             |
-| `goal_alignment`                      | Numeric 0–1; no goal CRUD exists yet                                                                                |
+| `goal_alignment`                      | Numeric 0–1 planning signal; it remains independent from the task’s explicit goal relationship                      |
+| `goal_id`                             | Nullable owned-goal FK; deleting a goal sets this link to null while preserving the task                            |
 | `blocked`                             | Boolean represented by constrained integer                                                                          |
 | `parent_task_id`                      | Nullable self-reference; a confirmed step references its container; deleting that container sets this value to null |
 | `is_decomposed`                       | Constrained boolean for an explicit breakdown container; defaults false so existing tasks remain actionable         |
 | creation/update/completion timestamps | UTC ISO timestamps; completion is nullable                                                                          |
 
-A decomposition is an explicit, transactional API action: reviewed child records are created first and the owned parent is marked as a container in the same transaction. The public general task update route cannot set either relationship field. Containers stay visible for history/context but are excluded from new planning candidates and focus starts; child records are ordinary independently editable tasks. Parent completion is rejected while any retained child is unfinished. Indexes support a user's status/update ordering, due-date lookups, and parent/child lookup.
+A decomposition is an explicit, transactional API action: reviewed child records are created first and the owned parent is marked as a container in the same transaction. The public general task update route cannot set either breakdown relationship field. Containers stay visible for history/context but are excluded from new planning candidates and focus starts; child records are ordinary independently editable tasks. A decomposition inherits the parent’s explicit `goal_id` server-side, while the user-authored `goal_alignment` value remains separate. Parent completion is rejected while any retained child is unfinished. Indexes support a user's status/update ordering, due-date lookups, goal lookup, and parent/child lookup.
 
 ### `task_dependencies`
 
@@ -166,7 +207,8 @@ The API prevents starting a second active/paused session for each authenticated 
 
 ## Deletion behavior
 
-- Deleting a user cascades to their preferences, tasks, events, plans, and sessions; audit events retain a null user reference.
+- Deleting a user cascades to their projects, goals, tasks, events, plans, and sessions; audit events retain a null user reference.
+- Deleting a project preserves its goals with `project_id = NULL`; deleting a goal preserves linked tasks with `goal_id = NULL` and cascades its milestones.
 - Deleting a task cascades its dependency rows; scheduled blocks and focus sessions preserve their historical record with `task_id = NULL` where configured. Deleting a breakdown container sets each retained child’s `parent_task_id` to `NULL`, releasing those records as standalone actionable tasks rather than deleting user-authored work.
 - Deleting a plan cascades its scheduled blocks.
 

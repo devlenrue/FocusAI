@@ -2,6 +2,9 @@ export type Priority = "low" | "medium" | "high" | "critical";
 export type TaskStatus = "backlog" | "todo" | "in_progress" | "done";
 export type CognitiveLoad = "low" | "medium" | "high";
 export type Readiness = "low" | "steady" | "high";
+export type ProjectStatus = "active" | "archived";
+export type GoalStatus = "active" | "completed" | "archived";
+export type MilestoneStatus = "pending" | "completed";
 
 export interface AuthUser {
   id: string;
@@ -43,6 +46,8 @@ export interface Task {
   dueAt: string | null;
   cognitiveLoad: CognitiveLoad;
   goalAlignment: number;
+  goalId: string | null;
+  goalTitle: string | null;
   blocked: boolean;
   /** Set only for records created through a confirmed task breakdown. */
   parentTaskId: string | null;
@@ -64,6 +69,7 @@ export interface TaskInput {
   dueAt: string | null;
   cognitiveLoad: CognitiveLoad;
   goalAlignment: number;
+  goalId: string | null;
   blocked: boolean;
   dependencies: string[];
 }
@@ -75,6 +81,52 @@ export type TaskUpdateInput = Partial<TaskInput> & {
 export interface TaskDecomposition {
   parent: Task;
   steps: Task[];
+}
+
+export interface Project {
+  id: string;
+  title: string;
+  description: string | null;
+  status: ProjectStatus;
+  targetDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  progress: {
+    totalGoals: number;
+    completedGoals: number;
+    activeGoals: number;
+  };
+}
+
+export interface Milestone {
+  id: string;
+  goalId: string;
+  title: string;
+  status: MilestoneStatus;
+  targetDate: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Goal {
+  id: string;
+  projectId: string | null;
+  projectTitle: string | null;
+  title: string;
+  description: string | null;
+  status: GoalStatus;
+  targetDate: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  progress: {
+    totalTasks: number;
+    completedTasks: number;
+    totalMilestones: number;
+    completedMilestones: number;
+  };
+  milestones: Milestone[];
 }
 
 export interface ScoreReason {

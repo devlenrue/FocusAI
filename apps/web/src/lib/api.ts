@@ -3,7 +3,10 @@ import type {
   CalendarEvent,
   Dashboard,
   FocusSession,
+  Goal,
+  Milestone,
   Plan,
+  Project,
   Readiness,
   Task,
   TaskDecomposition,
@@ -131,11 +134,98 @@ export const api = {
     }),
   deleteCalendarEvent: (eventId: string) =>
     request<void>(`/calendar-events/${eventId}`, { method: "DELETE" }),
+  getProjects: () => request<{ items: Project[] }>("/projects"),
+  getProject: (projectId: string) => request<Project>(`/projects/${projectId}`),
+  createProject: (input: {
+    title: string;
+    description?: string | null;
+    status?: Project["status"];
+    targetDate?: string | null;
+  }) =>
+    request<Project>("/projects", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateProject: (
+    projectId: string,
+    input: Partial<{
+      title: string;
+      description: string | null;
+      status: Project["status"];
+      targetDate: string | null;
+    }>,
+  ) =>
+    request<Project>(`/projects/${projectId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  deleteProject: (projectId: string) =>
+    request<void>(`/projects/${projectId}`, { method: "DELETE" }),
+  getGoals: () => request<{ items: Goal[] }>("/goals"),
+  getGoal: (goalId: string) => request<Goal>(`/goals/${goalId}`),
+  createGoal: (input: {
+    projectId?: string | null;
+    title: string;
+    description?: string | null;
+    status?: Goal["status"];
+    targetDate?: string | null;
+  }) =>
+    request<Goal>("/goals", { method: "POST", body: JSON.stringify(input) }),
+  updateGoal: (
+    goalId: string,
+    input: Partial<{
+      projectId: string | null;
+      title: string;
+      description: string | null;
+      status: Goal["status"];
+      targetDate: string | null;
+    }>,
+  ) =>
+    request<Goal>(`/goals/${goalId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  deleteGoal: (goalId: string) =>
+    request<void>(`/goals/${goalId}`, { method: "DELETE" }),
+  createMilestone: (
+    goalId: string,
+    input: {
+      title: string;
+      status?: Milestone["status"];
+      targetDate?: string | null;
+    },
+  ) =>
+    request<Milestone>(`/goals/${goalId}/milestones`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateMilestone: (
+    goalId: string,
+    milestoneId: string,
+    input: Partial<{
+      title: string;
+      status: Milestone["status"];
+      targetDate: string | null;
+    }>,
+  ) =>
+    request<Milestone>(`/goals/${goalId}/milestones/${milestoneId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  deleteMilestone: (goalId: string, milestoneId: string) =>
+    request<void>(`/goals/${goalId}/milestones/${milestoneId}`, {
+      method: "DELETE",
+    }),
   getDashboard: () => request<Dashboard>("/dashboard"),
-  getTasks: (filters?: { status?: TaskStatus; q?: string }) => {
+  getTasks: (filters?: {
+    status?: TaskStatus;
+    q?: string;
+    goalId?: string;
+  }) => {
     const params = new URLSearchParams();
     if (filters?.status) params.set("status", filters.status);
     if (filters?.q) params.set("q", filters.q);
+    if (filters?.goalId) params.set("goalId", filters.goalId);
     const suffix = params.size ? `?${params.toString()}` : "";
     return request<{ items: Task[] }>(`/tasks${suffix}`);
   },
@@ -148,6 +238,7 @@ export const api = {
     estimateMinutes?: number;
     dueAt?: string | null;
     cognitiveLoad?: Task["cognitiveLoad"];
+    goalId?: string | null;
   }) =>
     request<Task>("/tasks", { method: "POST", body: JSON.stringify(input) }),
   updateTask: (taskId: string, input: TaskUpdateInput) =>
