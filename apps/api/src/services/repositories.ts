@@ -15,6 +15,13 @@ import {
   rankTasks,
 } from "@focusai/decision-engine";
 import { FocusDatabase } from "../db/database.js";
+import {
+  LocalTimeResolutionError,
+  localDateFromUtc,
+  localDateTimeFromUtc,
+  nextCalendarDate,
+  utcFromLocalDateTime,
+} from "./time.js";
 
 export type TaskStatus = "backlog" | "todo" | "in_progress" | "done";
 
@@ -76,6 +83,34 @@ export interface PlanDto {
     score: number;
   }>;
   recovery?: RecoveryPlan["recovery"];
+}
+
+export interface UserPreferencesDto {
+  timezone: string;
+  workingDayStart: string;
+  workingDayEnd: string;
+  transitionMinutes: number;
+  highCognitiveRecoveryCap: number;
+}
+
+export interface CalendarEventDto {
+  id: string;
+  title: string;
+  startAt: string;
+  endAt: string;
+  /** Wall-clock values in the requesting user's current preference time zone. */
+  startLocal: string;
+  endLocal: string;
+  isFixed: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CalendarEventInput {
+  title: string;
+  startLocal: string;
+  endLocal: string;
+  isFixed: boolean;
 }
 
 export class NotFoundError extends Error {}
@@ -150,6 +185,9 @@ interface EventRow {
   title: string;
   start_at: string;
   end_at: string;
+  is_fixed: number;
+  created_at: string;
+  updated_at: string;
 }
 
 interface PlanContext {
@@ -162,6 +200,30 @@ interface PlanContext {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function rowToPreferences(row: PreferenceRow): UserPreferencesDto {
+  return {
+    timezone: row.timezone,
+    workingDayStart: row.working_day_start,
+    workingDayEnd: row.working_day_end,
+    transitionMinutes: row.transition_minutes,
+    highCognitiveRecoveryCap: row.high_cognitive_recovery_cap,
+  };
+}
+
+function rowToCalendarEvent(row: EventRow, timezone: string): CalendarEventDto {
+  return {
+    id: row.id,
+    title: row.title,
+    startAt: row.start_at,
+    endAt: row.end_at,
+    startLocal: localDateTimeFromUtc(row.start_at, timezone),
+    endLocal: localDateTimeFromUtc(row.end_at, timezone),
+    isFixed: row.is_fixed === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 function rowToTask(row: TaskRow, dependencies: string[]): TaskDto {
@@ -202,10 +264,6 @@ function rowToFocus(row: FocusRow): FocusSessionDto {
   };
 }
 
-function isoDateToday(): string {
-  return nowIso().slice(0, 10);
-}
-
 function asPlanningTask(task: TaskDto): PlanningTask {
   return {
     id: task.id,
@@ -237,6 +295,200 @@ function parseContext(contextJson: string): PlanContext {
         isFeasible: true,
       },
     };
+  }
+}
+
+export class PreferencesRepository {
+  constructor(private readonly database: FocusDatabase) {}
+
+  get(userId: string): UserPreferencesDto {
+    const row = this.database.get<PreferenceRow>(
+      `SELECT timezone, working_day_start, working_day_end, transition_minutes, high_cognitive_recovery_cap
+       FROM user_preferences WHERE user_id = ?`,
+      [userId],
+    );
+    if (!row) throw new NotFoundError("User preferences not found.");
+    return rowToPreferences(row);
+  }
+
+  update(
+    input: Partial<UserPreferencesDto>,
+    userId: string,
+  ): UserPreferencesDto {
+    this.get(userId);
+    const fields: string[] = [];
+    const values: Array<string | number> = [];
+    const mapping: Array<
+      [keyof UserPreferencesDto, string, (value: never) => string | number]
+    > = [
+      ["timezone", "timezone", (value) => String(value)],
+      ["workingDayStart", "working_day_start", (value) => String(value)],
+      ["workingDayEnd", "working_day_end", (value) => String(value)],
+      ["transitionMinutes", "transition_minutes", (value) => Number(value)],
+      [
+        "highCognitiveRecoveryCap",
+        "high_cognitive_recovery_cap",
+        (value) => Number(value),
+      ],
+    ];
+    for (const [key, column, transform] of mapping) {
+      if (input[key] !== undefined) {
+        fields.push(`${column} = ?`);
+        values.push(transform(input[key] as never));
+      }
+    }
+    if (fields.length === 0) return this.get(userId);
+
+    fields.push("updated_at = ?");
+    values.push(nowIso(), userId);
+    this.database.run(
+      `UPDATE user_preferences SET ${fields.join(", ")} WHERE user_id = ?`,
+      values,
+    );
+    return this.get(userId);
+  }
+}
+
+export class CalendarEventRepository {
+  constructor(
+    private readonly database: FocusDatabase,
+    private readonly preferences: PreferencesRepository,
+  ) {}
+
+  list(
+    input: { startDate: string; endDate: string },
+    userId: string,
+  ): CalendarEventDto[] {
+    const preferences = this.preferences.get(userId);
+    const startAt = this.resolveLocal(
+      `${input.startDate}T00:00`,
+      preferences.timezone,
+    );
+    const endAt = this.resolveLocal(
+      `${nextCalendarDate(input.endDate)}T00:00`,
+      preferences.timezone,
+    );
+    return this.database
+      .all<EventRow>(
+        `SELECT id, title, start_at, end_at, is_fixed, created_at, updated_at
+         FROM calendar_events
+         WHERE user_id = ? AND start_at < ? AND end_at > ?
+         ORDER BY start_at ASC, end_at ASC`,
+        [userId, endAt, startAt],
+      )
+      .map((row) => rowToCalendarEvent(row, preferences.timezone));
+  }
+
+  create(input: CalendarEventInput, userId: string): CalendarEventDto {
+    const preferences = this.preferences.get(userId);
+    const startAt = this.resolveLocal(input.startLocal, preferences.timezone);
+    const endAt = this.resolveLocal(input.endLocal, preferences.timezone);
+    this.assertChronological(startAt, endAt);
+
+    const id = randomUUID();
+    const now = nowIso();
+    this.database.run(
+      `INSERT INTO calendar_events(
+        id, user_id, title, start_at, end_at, is_fixed, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        userId,
+        input.title.trim(),
+        startAt,
+        endAt,
+        input.isFixed ? 1 : 0,
+        now,
+        now,
+      ],
+    );
+    return this.get(id, userId);
+  }
+
+  update(
+    eventId: string,
+    input: Partial<CalendarEventInput>,
+    userId: string,
+  ): CalendarEventDto {
+    const row = this.rowForUser(eventId, userId);
+    const preferences = this.preferences.get(userId);
+    const startAt =
+      input.startLocal === undefined
+        ? row.start_at
+        : this.resolveLocal(input.startLocal, preferences.timezone);
+    const endAt =
+      input.endLocal === undefined
+        ? row.end_at
+        : this.resolveLocal(input.endLocal, preferences.timezone);
+    this.assertChronological(startAt, endAt);
+
+    const fields: string[] = [];
+    const values: Array<string | number> = [];
+    if (input.title !== undefined) {
+      fields.push("title = ?");
+      values.push(input.title.trim());
+    }
+    if (input.startLocal !== undefined) {
+      fields.push("start_at = ?");
+      values.push(startAt);
+    }
+    if (input.endLocal !== undefined) {
+      fields.push("end_at = ?");
+      values.push(endAt);
+    }
+    if (input.isFixed !== undefined) {
+      fields.push("is_fixed = ?");
+      values.push(input.isFixed ? 1 : 0);
+    }
+    if (fields.length === 0)
+      return rowToCalendarEvent(row, preferences.timezone);
+
+    fields.push("updated_at = ?");
+    values.push(nowIso(), eventId, userId);
+    this.database.run(
+      `UPDATE calendar_events SET ${fields.join(", ")} WHERE id = ? AND user_id = ?`,
+      values,
+    );
+    return this.get(eventId, userId);
+  }
+
+  delete(eventId: string, userId: string): void {
+    this.rowForUser(eventId, userId);
+    this.database.run(
+      "DELETE FROM calendar_events WHERE id = ? AND user_id = ?",
+      [eventId, userId],
+    );
+  }
+
+  get(eventId: string, userId: string): CalendarEventDto {
+    const row = this.rowForUser(eventId, userId);
+    return rowToCalendarEvent(row, this.preferences.get(userId).timezone);
+  }
+
+  private rowForUser(eventId: string, userId: string): EventRow {
+    const row = this.database.get<EventRow>(
+      `SELECT id, title, start_at, end_at, is_fixed, created_at, updated_at
+       FROM calendar_events WHERE id = ? AND user_id = ?`,
+      [eventId, userId],
+    );
+    if (!row) throw new NotFoundError("Calendar event not found.");
+    return row;
+  }
+
+  private resolveLocal(localDateTime: string, timezone: string): string {
+    try {
+      return utcFromLocalDateTime(localDateTime, timezone);
+    } catch (error) {
+      if (error instanceof LocalTimeResolutionError)
+        throw new ConflictError(error.message);
+      throw error;
+    }
+  }
+
+  private assertChronological(startAt: string, endAt: string): void {
+    if (Date.parse(endAt) <= Date.parse(startAt)) {
+      throw new ConflictError("An event must end after it starts.");
+    }
   }
 }
 
@@ -593,6 +845,7 @@ export class PlanRepository {
   constructor(
     private readonly database: FocusDatabase,
     private readonly tasks: TaskRepository,
+    private readonly preferences: PreferencesRepository,
   ) {}
 
   generate(
@@ -605,7 +858,7 @@ export class PlanRepository {
     },
     userId: string,
   ): PlanDto {
-    const preference = this.preferences(userId);
+    const preference = this.preferences.get(userId);
     const availability = input.availability?.length
       ? input.availability
       : input.recovery
@@ -620,8 +873,8 @@ export class PlanRepository {
       now: input.now ?? nowIso(),
       readiness: input.readiness,
       preferences: {
-        transitionMinutes: preference.transition_minutes,
-        highCognitiveRecoveryCapRatio: preference.high_cognitive_recovery_cap,
+        transitionMinutes: preference.transitionMinutes,
+        highCognitiveRecoveryCapRatio: preference.highCognitiveRecoveryCap,
       },
     };
     const enginePlan = input.recovery
@@ -668,28 +921,36 @@ export class PlanRepository {
   }
 
   today(userId: string): PlanDto | null {
-    return this.latestForDate(isoDateToday(), userId);
-  }
-
-  private preferences(userId: string): PreferenceRow {
-    const row = this.database.get<PreferenceRow>(
-      `SELECT timezone, working_day_start, working_day_end, transition_minutes, high_cognitive_recovery_cap
-       FROM user_preferences WHERE user_id = ?`,
-      [userId],
-    );
-    if (!row) throw new NotFoundError("User preferences not found.");
-    return row;
+    const timezone = this.preferences.get(userId).timezone;
+    return this.latestForDate(localDateFromUtc(nowIso(), timezone), userId);
   }
 
   private defaultAvailability(
     planDate: string,
-    preference: PreferenceRow,
+    preference: UserPreferencesDto,
   ): AvailabilityWindow[] {
-    const startAt = `${planDate}T${preference.working_day_start}:00.000Z`;
-    const endAt = `${planDate}T${preference.working_day_end}:00.000Z`;
+    let startAt: string;
+    let endAt: string;
+    try {
+      startAt = utcFromLocalDateTime(
+        `${planDate}T${preference.workingDayStart}`,
+        preference.timezone,
+      );
+      endAt = utcFromLocalDateTime(
+        `${planDate}T${preference.workingDayEnd}`,
+        preference.timezone,
+      );
+    } catch (error) {
+      if (error instanceof LocalTimeResolutionError) {
+        throw new ConflictError(
+          "Working hours fall in a daylight-saving transition. Update your planning preferences for this date.",
+        );
+      }
+      throw error;
+    }
     if (Date.parse(endAt) <= Date.parse(startAt)) {
       throw new ConflictError(
-        "Working hours are not a valid availability window.",
+        "Working hours are not a valid same-day availability window.",
       );
     }
     return [{ startAt, endAt }];
@@ -697,7 +958,7 @@ export class PlanRepository {
 
   private remainingAvailability(
     planDate: string,
-    preference: PreferenceRow,
+    preference: UserPreferencesDto,
     now?: string,
   ): AvailabilityWindow[] {
     const [window] = this.defaultAvailability(planDate, preference);
@@ -725,7 +986,8 @@ export class PlanRepository {
     if (!start || !end) return [];
     return this.database
       .all<EventRow>(
-        `SELECT id, title, start_at, end_at FROM calendar_events
+        `SELECT id, title, start_at, end_at, is_fixed, created_at, updated_at
+         FROM calendar_events
          WHERE user_id = ? AND is_fixed = 1 AND start_at < ? AND end_at > ?`,
         [userId, end, start],
       )
@@ -842,6 +1104,7 @@ export class DashboardService {
     private readonly tasks: TaskRepository,
     private readonly plans: PlanRepository,
     private readonly sessions: FocusSessionRepository,
+    private readonly preferences: PreferencesRepository,
   ) {}
 
   get(userId: string): {
@@ -852,6 +1115,7 @@ export class DashboardService {
     plan: PlanDto | null;
     focusSession: FocusSessionDto | null;
   } {
+    const preferences = this.preferences.get(userId);
     const allTasks = this.tasks.list(userId);
     const active = allTasks.filter((task) => task.status !== "done");
     const ranked = rankTasks(active.map(asPlanningTask), {
@@ -861,7 +1125,7 @@ export class DashboardService {
     });
     const plan = this.plans.today(userId);
     return {
-      date: isoDateToday(),
+      date: localDateFromUtc(nowIso(), preferences.timezone),
       topPriorities: plan?.topPriorities.length
         ? plan.topPriorities
         : ranked.slice(0, 3),

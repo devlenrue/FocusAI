@@ -19,14 +19,23 @@ import {
   UnauthorizedError,
 } from "./services/auth.js";
 import {
+  CalendarEventRepository,
   ConflictError,
   DashboardService,
   FocusSessionRepository,
   NotFoundError,
   PlanRepository,
+  PreferencesRepository,
   TaskRepository,
   type TaskStatus,
+  type UserPreferencesDto,
 } from "./services/repositories.js";
+import {
+  canonicalTimeZone,
+  isValidCalendarDate,
+  isValidLocalDateTime,
+  isValidTimeZone,
+} from "./services/time.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -108,9 +117,28 @@ const taskStatusSchema = z.enum(["backlog", "todo", "in_progress", "done"]);
 const prioritySchema = z.enum(["low", "medium", "high", "critical"]);
 const cognitiveLoadSchema = z.enum(["low", "medium", "high"]);
 const isoSchema = z.string().datetime({ offset: true });
+const calendarDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD.")
+  .refine(isValidCalendarDate, "Use a real calendar date.");
+const localDateTimeSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "Use YYYY-MM-DDTHH:mm.")
+  .refine(isValidLocalDateTime, "Use a real local date and time.");
+const timeOfDaySchema = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm.");
+const timeZoneSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .refine(isValidTimeZone, "Use a valid IANA time zone such as Africa/Nairobi.")
+  .transform(canonicalTimeZone);
 const taskIdSchema = z.object({ taskId: z.string().uuid() });
 const focusIdSchema = z.object({ sessionId: z.string().uuid() });
 const planIdSchema = z.object({ planId: z.string().uuid() });
+const calendarEventIdSchema = z.object({ eventId: z.string().uuid() });
 
 const authSchema = z.object({
   email: z.string().trim().email().max(254),
@@ -145,7 +173,7 @@ const taskUpdateSchema = taskCreateSchema.partial().extend({
 });
 
 const planRequestSchema = z.object({
-  planDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD."),
+  planDate: calendarDateSchema,
   readiness: z.enum(["low", "steady", "high"]).optional().default("steady"),
   now: isoSchema.optional(),
   availability: z
@@ -155,6 +183,51 @@ const planRequestSchema = z.object({
     .optional(),
   recovery: z.boolean().optional().default(false),
 });
+
+const preferenceUpdateSchema = z
+  .object({
+    timezone: timeZoneSchema.optional(),
+    workingDayStart: timeOfDaySchema.optional(),
+    workingDayEnd: timeOfDaySchema.optional(),
+    transitionMinutes: z.number().int().min(0).max(60).optional(),
+    highCognitiveRecoveryCap: z.number().min(0).max(1).optional(),
+  })
+  .refine((input) => Object.keys(input).length > 0, {
+    message: "Provide at least one preference to update.",
+  });
+
+const calendarEventCreateSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  startLocal: localDateTimeSchema,
+  endLocal: localDateTimeSchema,
+  isFixed: z.boolean().optional().default(true),
+});
+const calendarEventUpdateSchema = z
+  .object({
+    title: z.string().trim().min(1).max(200).optional(),
+    startLocal: localDateTimeSchema.optional(),
+    endLocal: localDateTimeSchema.optional(),
+    isFixed: z.boolean().optional(),
+  })
+  .refine((input) => Object.keys(input).length > 0, {
+    message: "Provide at least one event value to update.",
+  });
+const calendarRangeSchema = z
+  .object({
+    startDate: calendarDateSchema,
+    endDate: calendarDateSchema,
+  })
+  .refine((input) => input.endDate >= input.startDate, {
+    message: "The end date must be on or after the start date.",
+  })
+  .refine(
+    (input) => {
+      const start = Date.parse(`${input.startDate}T00:00:00.000Z`);
+      const end = Date.parse(`${input.endDate}T00:00:00.000Z`);
+      return end - start <= 366 * 24 * 60 * 60 * 1000;
+    },
+    { message: "Request at most one year of calendar events at a time." },
+  );
 
 const focusStartSchema = z.object({
   taskId: z.string().uuid().nullable().optional().default(null),
@@ -187,10 +260,12 @@ export async function buildApp(
   const database =
     dependencies.database ?? new FocusDatabase(config.databasePath);
   const auth = new AuthService(database);
+  const preferences = new PreferencesRepository(database);
+  const calendarEvents = new CalendarEventRepository(database, preferences);
   const tasks = new TaskRepository(database);
   const sessions = new FocusSessionRepository(database, tasks);
-  const plans = new PlanRepository(database, tasks);
-  const dashboard = new DashboardService(tasks, plans, sessions);
+  const plans = new PlanRepository(database, tasks, preferences);
+  const dashboard = new DashboardService(tasks, plans, sessions, preferences);
 
   await app.register(cookie);
   await app.register(helmet, { contentSecurityPolicy: false });
@@ -324,6 +399,79 @@ export async function buildApp(
     dashboard.get(requireAuthentication(request).user.id),
   );
 
+  app.get(
+    "/api/v1/preferences",
+    { preHandler: protectedRead },
+    async (request) => preferences.get(requireAuthentication(request).user.id),
+  );
+
+  app.patch(
+    "/api/v1/preferences",
+    { preHandler: protectedWrite },
+    async (request) => {
+      const context = requireWriteAuthentication(request, auth);
+      const input = parse(preferenceUpdateSchema, request.body);
+      const current = preferences.get(context.user.id);
+      const next: UserPreferencesDto = { ...current, ...input };
+      if (next.workingDayEnd <= next.workingDayStart) {
+        throw new ValidationError({
+          formErrors: [
+            "Working-day end must be later than working-day start on the same local day.",
+          ],
+          fieldErrors: {
+            workingDayStart: [],
+            workingDayEnd: [],
+          },
+        });
+      }
+      return preferences.update(input, context.user.id);
+    },
+  );
+
+  app.get(
+    "/api/v1/calendar-events",
+    { preHandler: protectedRead },
+    async (request) => {
+      const context = requireAuthentication(request);
+      const range = parse(calendarRangeSchema, request.query);
+      return { items: calendarEvents.list(range, context.user.id) };
+    },
+  );
+
+  app.post(
+    "/api/v1/calendar-events",
+    { preHandler: protectedWrite },
+    async (request, reply) => {
+      const context = requireWriteAuthentication(request, auth);
+      const input = parse(calendarEventCreateSchema, request.body);
+      return reply
+        .code(201)
+        .send(calendarEvents.create(input, context.user.id));
+    },
+  );
+
+  app.patch(
+    "/api/v1/calendar-events/:eventId",
+    { preHandler: protectedWrite },
+    async (request) => {
+      const context = requireWriteAuthentication(request, auth);
+      const { eventId } = parse(calendarEventIdSchema, request.params);
+      const input = parse(calendarEventUpdateSchema, request.body);
+      return calendarEvents.update(eventId, input, context.user.id);
+    },
+  );
+
+  app.delete(
+    "/api/v1/calendar-events/:eventId",
+    { preHandler: protectedWrite },
+    async (request, reply) => {
+      const context = requireWriteAuthentication(request, auth);
+      const { eventId } = parse(calendarEventIdSchema, request.params);
+      calendarEvents.delete(eventId, context.user.id);
+      return reply.code(204).send();
+    },
+  );
+
   app.get("/api/v1/tasks", { preHandler: protectedRead }, async (request) => {
     const context = requireAuthentication(request);
     const query = parse(
@@ -393,16 +541,14 @@ export async function buildApp(
   app.get("/api/v1/plans", { preHandler: protectedRead }, async (request) => {
     const context = requireAuthentication(request);
     const { planDate } = parse(
-      z.object({
-        planDate: z
-          .string()
-          .regex(/^\d{4}-\d{2}-\d{2}$/)
-          .optional(),
-      }),
+      z.object({ planDate: calendarDateSchema.optional() }),
       request.query,
     );
-    const date = planDate ?? new Date().toISOString().slice(0, 10);
-    return { plan: plans.latestForDate(date, context.user.id) };
+    return {
+      plan: planDate
+        ? plans.latestForDate(planDate, context.user.id)
+        : plans.today(context.user.id),
+    };
   });
 
   app.post(

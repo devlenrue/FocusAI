@@ -1,11 +1,13 @@
 import type {
   AuthUser,
+  CalendarEvent,
   Dashboard,
   FocusSession,
   Plan,
   Readiness,
   Task,
   TaskStatus,
+  UserPreferences,
 } from "./types";
 
 const API_ROOT = "/api/v1";
@@ -91,6 +93,41 @@ export const api = {
     }),
   revokeOtherSessions: () =>
     request<void>("/auth/sessions/revoke-others", { method: "POST" }),
+  getPreferences: () => request<UserPreferences>("/preferences"),
+  updatePreferences: (input: Partial<UserPreferences>) =>
+    request<UserPreferences>("/preferences", {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  getCalendarEvents: (input: { startDate: string; endDate: string }) =>
+    request<{ items: CalendarEvent[] }>(
+      `/calendar-events?${new URLSearchParams(input).toString()}`,
+    ),
+  createCalendarEvent: (input: {
+    title: string;
+    startLocal: string;
+    endLocal: string;
+    isFixed: boolean;
+  }) =>
+    request<CalendarEvent>("/calendar-events", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateCalendarEvent: (
+    eventId: string,
+    input: Partial<{
+      title: string;
+      startLocal: string;
+      endLocal: string;
+      isFixed: boolean;
+    }>,
+  ) =>
+    request<CalendarEvent>(`/calendar-events/${eventId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  deleteCalendarEvent: (eventId: string) =>
+    request<void>(`/calendar-events/${eventId}`, { method: "DELETE" }),
   getDashboard: () => request<Dashboard>("/dashboard"),
   getTasks: (filters?: { status?: TaskStatus; q?: string }) => {
     const params = new URLSearchParams();

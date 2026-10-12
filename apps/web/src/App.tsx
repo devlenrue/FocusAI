@@ -8,6 +8,7 @@ import { AuthPage } from "@/pages/AuthPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { FocusPage } from "@/pages/FocusPage";
 import { PlanPage } from "@/pages/PlanPage";
+import { SchedulePage } from "@/pages/SchedulePage";
 import { TasksPage } from "@/pages/TasksPage";
 
 export function App() {
@@ -87,6 +88,7 @@ export function App() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/plan" element={<PlanPage />} />
+        <Route path="/schedule" element={<SchedulePage />} />
         <Route path="/focus" element={<FocusPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

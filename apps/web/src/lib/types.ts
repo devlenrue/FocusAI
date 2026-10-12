@@ -10,6 +10,27 @@ export interface AuthUser {
   createdAt: string;
 }
 
+export interface UserPreferences {
+  timezone: string;
+  workingDayStart: string;
+  workingDayEnd: string;
+  transitionMinutes: number;
+  highCognitiveRecoveryCap: number;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  startAt: string;
+  endAt: string;
+  /** A datetime-local-compatible value in the user's configured time zone. */
+  startLocal: string;
+  endLocal: string;
+  isFixed: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Task {
   id: string;
   title: string;

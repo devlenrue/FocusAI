@@ -2165,7 +2165,7 @@ p {
     bottom: 10px;
     left: 10px;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     padding: 5px;
     border: 1px solid rgba(135, 183, 218, 0.21);
     border-radius: 15px;

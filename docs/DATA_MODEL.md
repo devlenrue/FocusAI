@@ -70,13 +70,13 @@ No password, reusable session/CSRF token, IP address, user-agent, note body, or 
 
 One row per user, foreign-keyed to `users` with cascade deletion.
 
-| Column                                 | Notes                                         |
-| -------------------------------------- | --------------------------------------------- |
-| `timezone`                             | Current default `UTC`; settings UI is pending |
-| `working_day_start`, `working_day_end` | Local adapter defaults `09:00`/`18:00`        |
-| `transition_minutes`                   | 0–60, default 10                              |
-| `high_cognitive_recovery_cap`          | 0–1, default 0.2                              |
-| audit timestamps                       | UTC ISO timestamps                            |
+| Column                                 | Notes                                                                                                              |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `timezone`                             | Validated IANA zone; new users default to `UTC` and can update it through the authenticated Schedule & Capacity UI |
+| `working_day_start`, `working_day_end` | Same-local-day planning window, defaults `09:00`/`18:00`; end must be later than start                             |
+| `transition_minutes`                   | 0–60, default 10; passed to the deterministic planner                                                              |
+| `high_cognitive_recovery_cap`          | 0–1, default 0.2; passed to recovery planning                                                                      |
+| audit timestamps                       | UTC ISO timestamps                                                                                                 |
 
 ### `tasks`
 
@@ -118,7 +118,7 @@ The pair is unique and a task cannot directly depend on itself. Cycle detection 
 | `is_fixed`               | Fixed events are excluded from automatic plan slots |
 | audit timestamps         | UTC ISO timestamps                                  |
 
-The schema exists because the planning service already consumes fixed commitments. Calendar event CRUD/UI/external sync are not built yet and must not be advertised as connected calendar support.
+Authenticated users can create, list, update, and delete these local records through the Schedule & Capacity UI/API. Creation/update accepts a `datetime-local` wall-time value in the user's configured IANA zone; the API converts it to the persisted UTC instant and rejects ambiguous/nonexistent daylight-saving times. Fixed events are supplied to new plan drafts as commitments. Flexible events are stored/viewable but deliberately do not consume capacity. This is **manual local calendar data**, not external-calendar connection or sync support.
 
 ### `daily_plans`
 
@@ -169,9 +169,10 @@ The API prevents starting a second active/paused session for each authenticated 
 
 Formal account-deletion, export, retention, and restore workflows are not yet implemented.
 
-## Timestamp and timezone rule today
+## Timestamp and time-zone rules
 
 - Persisted instants use ISO-8601 UTC text (`...Z`).
-- The UI uses the browser locale for display.
-- The local planning default is explicitly 09:00–18:00 **UTC**, not a fake representation of per-user local working hours.
-- A future IANA timezone preference must define planning-day boundaries, DST behavior, and calendar conversion before timezone-aware planning can be claimed.
+- Each user has a validated IANA `timezone` preference; plans use that zone to determine the planning date and convert `working_day_start`/`working_day_end` into UTC availability.
+- Calendar UI values are local wall times in that preference zone. The server uses Temporal conversion and rejects a local time that is nonexistent or occurs twice during a daylight-saving transition instead of guessing.
+- Changing the preference zone is a display/planning preference change, not a rewrite of historical UTC event/plan instants. An existing commitment can appear at a different wall time after the change because its actual moment is preserved.
+- Browser locale still controls language/number presentation. Broader browser and DST E2E coverage remains future work.

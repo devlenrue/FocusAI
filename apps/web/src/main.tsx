@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import "./styles/index.css";
 import "./styles/auth.css";
+import "./styles/schedule.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {

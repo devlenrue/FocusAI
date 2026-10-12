@@ -38,7 +38,8 @@ The web client uses `/api/v1/*`, never `localhost` or a hard-coded remote API ho
 | `apps/api/src/security/passwords.ts`    | Memory-hard scrypt hashing and constant-time password verification                                                                               |
 | `apps/api/src/db/database.ts`           | Local connection lifecycle, migration ledger, foreign-key/WAL pragmas, transaction wrapper                                                       |
 | `apps/api/src/db/schema.ts`             | Versioned current schema definition                                                                                                              |
-| `apps/api/src/services/repositories.ts` | Repository/service boundaries for tasks, focus sessions, plans, and dashboard aggregation                                                        |
+| `apps/api/src/services/repositories.ts` | Repository/service boundaries for preferences, owned calendar events, tasks, focus sessions, plans, and dashboard aggregation                    |
+| `apps/api/src/services/time.ts`         | IANA zone validation plus Temporal-backed local-wall-time ↔ UTC conversion with daylight-saving ambiguity rejection                              |
 | `packages/decision-engine`              | Pure ranking/scheduling/recovery rules; no HTTP, database, or provider dependency                                                                |
 
 ## Why the decision engine is separate
@@ -77,6 +78,12 @@ Unsafe routes additionally verify a session-bound double-submit CSRF token. The 
 
 See [`AUTHENTICATION.md`](AUTHENTICATION.md) for the exact current protocol, password parameters, legacy claim behavior, and remaining hosted-production requirements.
 
+## Availability, calendar, and time-zone boundary
+
+`user_preferences` now contains an authenticated user's IANA zone, same-day working window, transition buffer, and recovery cap. The API validates IANA zone identifiers and uses `@js-temporal/polyfill` on the server to convert preference-local working hours and calendar-event wall times into persisted UTC instants. It rejects ambiguous or nonexistent daylight-saving transition times rather than silently moving a commitment.
+
+Calendar event CRUD is server-owned like every other workspace record. `is_fixed = true` commitments are passed into the deterministic engine and subtracted from generated **future drafts**. Flexible events remain visible in the schedule but do not consume planning capacity. Existing event instants are preserved when a user changes display time zone; their wall-clock rendering and future workday calculation change deliberately. Approved plans and historical records are not rewritten.
+
 ## API conventions
 
 - Version prefix: `/api/v1`.
@@ -101,21 +108,23 @@ When a session pauses or ends, the server calculates the elapsed interval from `
 
 ## Web UX foundations
 
-The web app starts at a real registration/sign-in gate, then intentionally exposes only four implemented workspace navigation surfaces:
+The web app starts at a real registration/sign-in gate, then intentionally exposes only five implemented workspace navigation surfaces:
 
 1. **Command center** — real task counts, persisted top priorities, next action, plan blocks, and focus status.
 2. **Task workspace** — capture, search, filter, complete, delete, and focus a task.
-3. **Planning studio** — plan input, draft generation, capacity/deferred explanation, approval, and recovery recalculation.
-4. **Focus studio** — session setup/control/history backed by the API.
+3. **Planning studio** — plan input, draft generation, capacity/deferred explanation, approval, and recovery recalculation in the configured time zone.
+4. **Schedule & capacity** — IANA zone/working-window/recovery-cap settings and owned commitment CRUD with an explicit fixed/flexible distinction.
+5. **Focus studio** — session setup/control/history backed by the API.
 
 The empty, error, loading, disabled, confirmation, and success states are part of these flows. Unsupported modules are documented rather than added as dead navigation items.
 
 ## Known architectural risks
 
-| Risk                                        | Current mitigation                                                       | Planned resolution                                                           |
-| ------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| `node:sqlite` is experimental in Node 22    | Isolated behind one adapter; test database injection                     | Supported production driver/ORM in production hardening                      |
-| Local adapter is not a hosted deployment    | Auth/ownership/CSRF work in local mode, with explicit `/meta` disclosure | Production database, HTTPS/proxy, email, backup and monitoring configuration |
-| Schedule uses UTC working-window defaults   | UI disclosure and explicit availability API input                        | IANA time-zone preferences and calendar UI                                   |
-| Whole-task scheduler cannot yet split tasks | Explicit capacity deferral instead of hidden overbooking                 | Task decomposition and user-approved splitting                               |
-| No optional LLM provider                    | Deterministic engine fully works alone                                   | Provider interface, timeout/privacy/schema controls                          |
+| Risk                                        | Current mitigation                                                        | Planned resolution                                                           |
+| ------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `node:sqlite` is experimental in Node 22    | Isolated behind one adapter; test database injection                      | Supported production driver/ORM in production hardening                      |
+| Local adapter is not a hosted deployment    | Auth/ownership/CSRF work in local mode, with explicit `/meta` disclosure  | Production database, HTTPS/proxy, email, backup and monitoring configuration |
+| DST/local-time edge cases                   | Server validates IANA zones and rejects ambiguous/nonexistent local times | Broader time-zone/DST E2E coverage and explicit user disambiguation choices  |
+| Calendar is manual, not connected           | Owned local event CRUD and fixed-capacity subtraction are real            | External authorization/sync, recurrence, conflict guidance                   |
+| Whole-task scheduler cannot yet split tasks | Explicit capacity deferral instead of hidden overbooking                  | Task decomposition and user-approved splitting                               |
+| No optional LLM provider                    | Deterministic engine fully works alone                                    | Provider interface, timeout/privacy/schema controls                          |

@@ -5,10 +5,11 @@ export function formatDuration(minutes: number): string {
   return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
 }
 
-export function formatClock(iso: string): string {
+export function formatClock(iso: string, timeZone?: string): string {
   return new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
     minute: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
   }).format(new Date(iso));
 }
 
@@ -27,7 +28,21 @@ export function formatShortDate(iso: string): string {
   }).format(new Date(iso));
 }
 
-export function todayKey(): string {
+export function todayKey(timeZone?: string): string {
+  if (timeZone) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const values = Object.fromEntries(
+      parts
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, part.value]),
+    );
+    return `${values.year}-${values.month}-${values.day}`;
+  }
   const now = new Date();
   const offset = now.getTimezoneOffset() * 60_000;
   return new Date(now.getTime() - offset).toISOString().slice(0, 10);

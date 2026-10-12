@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   Check,
@@ -35,7 +35,7 @@ const readinessOptions: Array<{
   { value: "high", title: "High", description: "Make room for deeper work" },
 ];
 
-function Timeline({ plan }: { plan: Plan }) {
+function Timeline({ plan, timeZone }: { plan: Plan; timeZone?: string }) {
   if (plan.blocks.length === 0) {
     return (
       <div className="inline-empty plan-inline-empty">
@@ -56,7 +56,7 @@ function Timeline({ plan }: { plan: Plan }) {
       {plan.blocks.map((block, index) => (
         <li key={block.id} className="plan-block">
           <div className="plan-time">
-            <strong>{formatClock(block.startAt)}</strong>
+            <strong>{formatClock(block.startAt, timeZone)}</strong>
             <span>{formatDuration(block.durationMinutes)}</span>
           </div>
           <span className="timeline-node" aria-hidden="true">
@@ -68,8 +68,8 @@ function Timeline({ plan }: { plan: Plan }) {
             </span>
             <h3>{block.title}</h3>
             <p>
-              Reserved from {formatClock(block.startAt)} to{" "}
-              {formatClock(block.endAt)} · scored{" "}
+              Reserved from {formatClock(block.startAt, timeZone)} to{" "}
+              {formatClock(block.endAt, timeZone)} · scored{" "}
               {Math.round(block.score * 100)}%
             </p>
           </article>
@@ -83,7 +83,7 @@ export function PlanPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [planDate, setPlanDate] = useState(
-    () => searchParams.get("date") ?? todayKey(),
+    () => searchParams.get("date") ?? "",
   );
   const initialReadiness = searchParams.get("readiness");
   const [readiness, setReadiness] = useState<Readiness>(
@@ -92,8 +92,18 @@ export function PlanPage() {
       : "steady",
   );
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const preferencesQuery = useQuery({
+    queryKey: ["preferences"],
+    queryFn: api.getPreferences,
+  });
+  const timeZone = preferencesQuery.data?.timezone;
 
   useEffect(() => {
+    if (!planDate && timeZone) setPlanDate(todayKey(timeZone));
+  }, [planDate, timeZone]);
+
+  useEffect(() => {
+    if (!planDate) return;
     setSearchParams(
       (current) => {
         current.set("date", planDate);
@@ -107,6 +117,7 @@ export function PlanPage() {
   const planQuery = useQuery({
     queryKey: ["plan", planDate],
     queryFn: () => api.getPlan(planDate),
+    enabled: Boolean(planDate),
   });
   const generatePlan = useMutation({
     mutationFn: ({ recovery }: { recovery?: boolean }) =>
@@ -231,9 +242,9 @@ export function PlanPage() {
           </div>
         </div>
         <p className="planning-disclosure">
-          <ShieldCheck size={15} /> This local increment uses a 09:00–18:00 UTC
-          working window until preference settings and calendar event editing
-          are added. It never pretends unknown availability is known.
+          <ShieldCheck size={15} /> Plans use your {timeZone ?? "configured"}{" "}
+          time zone, saved working window, and fixed commitments. Need to change
+          them? <Link to="/schedule">Manage schedule & capacity</Link>.
         </p>
       </section>
 
@@ -315,7 +326,7 @@ export function PlanPage() {
                 </div>
               </div>
             )}
-            <Timeline plan={plan} />
+            <Timeline plan={plan} timeZone={timeZone} />
           </article>
 
           <aside className="plan-insights-stack">

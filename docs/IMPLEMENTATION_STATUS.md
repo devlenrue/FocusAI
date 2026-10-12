@@ -64,7 +64,7 @@ Environment verified during audit: Node `v22.22.3`, npm `10.9.8`.
 | CSRF/rate limiting/auth audit log            | **Tested**      | Session-bound double-submit CSRF, stricter auth rate limits, and minimal non-sensitive audit events |
 | Additive database migrations                 | **Tested**      | Version 1 → 2 preservation is covered; local SQLite remains intentionally limited                   |
 | Production relational adapter                | **Not Started** | No hosted production database is configured or claimed                                              |
-| Preference settings UI / IANA timezone       | **Not Started** | Current default is disclosed as UTC                                                                 |
+| Preference settings UI / IANA timezone       | **Tested**      | Authenticated Schedule & Capacity UI validates IANA zones and uses them for plan-day boundaries     |
 
 ### Increment 2 delivery — identity and secure ownership
 
@@ -83,16 +83,31 @@ Environment verified during audit: Node `v22.22.3`, npm `10.9.8`.
 
 See [`AUTHENTICATION.md`](AUTHENTICATION.md) for exact cookie, CSRF, password, and legacy-data behavior.
 
+### Increment 2 delivery — schedule, capacity, and time zones
+
+**Objective:** Make plan availability truthful for each authenticated user before extending productivity modules: configurable local working hours, explicit commitments, and correct UTC persistence.
+
+| Area                       | Delivered behavior                                                                                                | Status     |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------- |
+| IANA preferences           | Authenticated UI/API for IANA zone, same-day working window, transition buffer, and recovery high-load cap        | **Tested** |
+| Time-zone planning         | Server converts local work hours into UTC plan availability; dashboard/current-plan date follows the profile zone | **Tested** |
+| Commitment CRUD            | Users can create, list, edit, and remove owned local calendar commitments in profile-local wall time              | **Tested** |
+| Capacity behavior          | Fixed commitments subtract from new plan drafts; flexible entries stay visible but do not reserve capacity        | **Tested** |
+| DST safety                 | Invalid/ambiguous local transition times are rejected rather than silently shifted                                | **Tested** |
+| Event instant preservation | Existing UTC event instant is not rewritten when the profile time zone changes                                    | **Tested** |
+
+This is manual local calendar data, not a connected provider, recurring-event system, or conflict-resolution UI.
+
 ### Increment 3 — connected productivity records
 
-| Feature                               | Status          | Notes                                                                 |
-| ------------------------------------- | --------------- | --------------------------------------------------------------------- |
-| Projects/goals/milestones             | **Not Started** | `goal_alignment` exists as an engine input only                       |
-| Notes and conversion to task          | **Not Started** | No placeholder route                                                  |
-| Habit tracking                        | **Not Started** | No placeholder route                                                  |
-| Calendar event CRUD/views             | **In Progress** | Normalized event table + engine consumption exist; no UI/API CRUD yet |
-| Task editing/subtasks/recurrence/tags | **In Progress** | Basic lifecycle works; richer model/workflows are pending             |
-| Analytics                             | **Not Started** | No fabricated charts                                                  |
+| Feature                               | Status          | Notes                                                                                   |
+| ------------------------------------- | --------------- | --------------------------------------------------------------------------------------- |
+| Projects/goals/milestones             | **Not Started** | `goal_alignment` exists as an engine input only                                         |
+| Notes and conversion to task          | **Not Started** | No placeholder route                                                                    |
+| Habit tracking                        | **Not Started** | No placeholder route                                                                    |
+| Calendar event CRUD/views             | **Tested**      | Owned API/UI CRUD, local-zone display, and fixed/flexible capacity behavior are covered |
+| Task editing/subtasks/recurrence/tags | **In Progress** | Basic lifecycle works; richer model/workflows are pending                               |
+| Analytics                             | **Not Started** | No fabricated charts                                                                    |
 
 ### Increment 4 — adaptive/hybrid intelligence
 
@@ -121,10 +136,10 @@ See [`AUTHENTICATION.md`](AUTHENTICATION.md) for exact cookie, CSRF, password, a
 | Monitoring/error reporting/deployment  | **Not Started** | No deployment configuration supplied                     |
 | External calendar integration          | **Not Started** | Never show connected status without real authorization   |
 
-## Files and architectural areas added across Increments 1–2
+## Files and architectural areas added across Increments 1–3
 
-- `apps/web`: React/Vite responsive product surfaces/design system plus private registration/sign-in gate and authenticated account header.
-- `apps/api`: Fastify `/api/v1`, additive schema migration, authenticated route guards, password/session services, repositories, planning/focus services, API integration tests.
+- `apps/web`: React/Vite responsive product surfaces/design system, private registration/sign-in gate/account header, and Schedule & Capacity UI.
+- `apps/api`: Fastify `/api/v1`, additive schema migration, authenticated route guards, password/session services, IANA-time conversion, preference/calendar/task/plan/focus repositories, and API integration tests.
 - `packages/decision-engine`: pure scoring/scheduling/recovery package and unit tests.
 - `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md`, `docs/DECISION_ENGINE.md`, `docs/TESTING.md`, and `docs/AUTHENTICATION.md`.
 - Root workspace/tooling, `.env.example`, `.gitignore`, and `.github/workflows/ci.yml`.
@@ -152,16 +167,20 @@ See [`AUTHENTICATION.md`](AUTHENTICATION.md) for exact cookie, CSRF, password, a
 | 2026-10-12 | Existing local SQLite migration inspection                                  | Passed — schema migrations 1 and 2 present; user credential columns added without deleting existing local data                                                            |
 | 2026-10-12 | Isolated real-HTTP auth smoke                                               | Passed — register 201, HTTP-only cookie, CSRF rejection 403, protected task creation 201, logout 204, revoked-session dashboard 401; temporary database removed afterward |
 | 2026-10-12 | Vite preview/proxy smoke                                                    | Passed — preview root 200 and relative proxied unauthenticated dashboard 401                                                                                              |
+| 2026-10-12 | Clean-artifact typecheck/test simulation                                    | Passed — removed generated decision-engine artifacts; API typecheck resolved source and API pretest rebuilt runtime artifacts                                             |
+| 2026-10-12 | Schedule increment command suite                                            | Passed — typecheck, lint, 6 authenticated API integration tests + 4 engine tests, build, format check, and moderate audit                                                 |
+| 2026-10-12 | Isolated real-HTTP schedule smoke                                           | Passed — preference 200, event 201, fixed capacity 120, flexible capacity 180, preserved UTC instant after zone change, DST gap 409; temporary database removed           |
+| 2026-10-12 | Schedule preview/proxy smoke                                                | Passed — `/schedule` served 200; direct and relative-proxy unauthenticated preferences returned 401                                                                       |
 
 ## Risks, limitations, and next highest-priority action
 
-| Item                             | Risk / limitation                                                                         | Next action                                                             |
-| -------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Local development deployment     | Auth/ownership is implemented, but the SQLite adapter is not a hosted production database | Add supported production database and deployment security configuration |
-| Experimental `node:sqlite`       | Not an appropriate unqualified production datastore claim                                 | Add supported production relational adapter and migration tooling       |
-| UTC default working window       | Does not meet full timezone/DST requirement                                               | Build preference UI and IANA timezone scheduling tests                  |
-| Calendar schema without event UI | Fixed commitments cannot yet be created by a user                                         | Implement authorized event CRUD + conflict tests                        |
-| Whole-task schedule              | Long work cannot yet be split automatically                                               | Add user-confirmed decomposition/subtasks and feasibility UI            |
-| No mobile/offline                | Cross-device/offline acceptance criteria are unverified                                   | Stabilize auth/API contracts, then add Expo client and sync design      |
+| Item                                   | Risk / limitation                                                                         | Next action                                                             |
+| -------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Local development deployment           | Auth/ownership is implemented, but the SQLite adapter is not a hosted production database | Add supported production database and deployment security configuration |
+| Experimental `node:sqlite`             | Not an appropriate unqualified production datastore claim                                 | Add supported production relational adapter and migration tooling       |
+| DST ambiguity / nonexistent local time | The API intentionally rejects a time it cannot resolve without guessing                   | Add browser E2E coverage and a user-facing disambiguation design        |
+| Manual local calendar only             | No external provider authorization, sync, recurrence, or conflict guidance exists         | Design explicit calendar connection and recurrence workflows            |
+| Whole-task schedule                    | Long work cannot yet be split automatically                                               | Add user-confirmed decomposition/subtasks and feasibility UI            |
+| No mobile/offline                      | Cross-device/offline acceptance criteria are unverified                                   | Stabilize auth/API contracts, then add Expo client and sync design      |
 
-**Next highest-priority action: preference settings and user-created calendar commitments.** Identity/ownership is now a tested foundation; making availability, time zones, working hours, and fixed events real is the safest next step for more useful plans.
+**Next highest-priority action: richer task editing and user-confirmed decomposition.** Availability and explicit commitments are now real inputs; long or multi-step work still needs an honest, editable breakdown instead of hidden overbooking.

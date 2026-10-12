@@ -61,6 +61,10 @@ export function DashboardPage() {
     queryKey: ["dashboard"],
     queryFn: api.getDashboard,
   });
+  const preferencesQuery = useQuery({
+    queryKey: ["preferences"],
+    queryFn: api.getPreferences,
+  });
 
   if (dashboardQuery.isPending)
     return <LoadingState label="Reading your actual workspace…" />;
@@ -73,6 +77,7 @@ export function DashboardPage() {
     );
 
   const dashboard = dashboardQuery.data;
+  const timeZone = preferencesQuery.data?.timezone;
   const completionRate = dashboard.tasks.total
     ? Math.round((dashboard.tasks.completed / dashboard.tasks.total) * 100)
     : 0;
@@ -254,7 +259,7 @@ export function DashboardPage() {
                   {planBlocks.slice(0, 4).map((block) => (
                     <div className="mini-block" key={block.id}>
                       <span className="mini-block-time">
-                        {formatClock(block.startAt)}
+                        {formatClock(block.startAt, timeZone)}
                       </span>
                       <span className="mini-block-line" aria-hidden="true" />
                       <div>

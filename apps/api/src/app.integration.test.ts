@@ -324,6 +324,195 @@ describe("FocusAI authenticated API", () => {
     ).toEqual([expect.objectContaining({ id: taskId })]);
   });
 
+  it("uses IANA preferences and user-owned fixed commitments in plans", async () => {
+    const asha = await register("Asha", "asha@example.com");
+
+    const defaults = await app.inject({
+      method: "GET",
+      url: "/api/v1/preferences",
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(defaults.statusCode).toBe(200);
+    expect((defaults.json() as { timezone: string }).timezone).toBe("UTC");
+
+    const missingCsrf = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/preferences",
+      headers: authHeaders(asha.cookies, false),
+      payload: { timezone: "Africa/Nairobi" },
+    });
+    expect(missingCsrf.statusCode).toBe(403);
+
+    const preferences = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/preferences",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        timezone: "Africa/Nairobi",
+        workingDayStart: "09:00",
+        workingDayEnd: "12:00",
+        transitionMinutes: 0,
+        highCognitiveRecoveryCap: 0.35,
+      },
+    });
+    expect(preferences.statusCode).toBe(200);
+    expect(preferences.json()).toMatchObject({
+      timezone: "Africa/Nairobi",
+      workingDayStart: "09:00",
+      workingDayEnd: "12:00",
+      transitionMinutes: 0,
+      highCognitiveRecoveryCap: 0.35,
+    });
+
+    const eventResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/calendar-events",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        title: "Client check-in",
+        startLocal: "2026-10-12T10:00",
+        endLocal: "2026-10-12T11:00",
+        isFixed: true,
+      },
+    });
+    expect(eventResponse.statusCode).toBe(201);
+    const event = eventResponse.json() as {
+      id: string;
+      startAt: string;
+      endAt: string;
+      startLocal: string;
+      isFixed: boolean;
+    };
+    expect(event).toMatchObject({
+      startAt: "2026-10-12T07:00:00Z",
+      endAt: "2026-10-12T08:00:00Z",
+      startLocal: "2026-10-12T10:00",
+      isFixed: true,
+    });
+
+    const listed = await app.inject({
+      method: "GET",
+      url: "/api/v1/calendar-events?startDate=2026-10-12&endDate=2026-10-12",
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(listed.statusCode).toBe(200);
+    expect((listed.json() as { items: Array<{ id: string }> }).items).toEqual([
+      expect.objectContaining({ id: event.id }),
+    ]);
+
+    const privateTask = await app.inject({
+      method: "POST",
+      url: "/api/v1/tasks",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        title: "Prepare check-in notes",
+        estimateMinutes: 60,
+        priority: "high",
+      },
+    });
+    expect(privateTask.statusCode).toBe(201);
+
+    const protectedPlan = await app.inject({
+      method: "POST",
+      url: "/api/v1/plans/generate",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        planDate: "2026-10-12",
+        readiness: "steady",
+        now: "2026-10-12T05:00:00.000Z",
+      },
+    });
+    expect(protectedPlan.statusCode).toBe(201);
+    const fixedPlan = protectedPlan.json() as {
+      capacityMinutes: number;
+      blocks: Array<{ startAt: string; endAt: string }>;
+    };
+    expect(fixedPlan.capacityMinutes).toBe(120);
+    expect(fixedPlan.blocks).toEqual([
+      expect.objectContaining({
+        startAt: "2026-10-12T06:00:00.000Z",
+        endAt: "2026-10-12T07:00:00.000Z",
+      }),
+    ]);
+
+    const ren = await register("Ren", "ren@example.com");
+    const renCannotUpdate = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/calendar-events/${event.id}`,
+      headers: authHeaders(ren.cookies),
+      payload: { title: "Not Ren's event" },
+    });
+    expect(renCannotUpdate.statusCode).toBe(404);
+
+    const unprotected = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/calendar-events/${event.id}`,
+      headers: authHeaders(asha.cookies),
+      payload: { isFixed: false },
+    });
+    expect(unprotected.statusCode).toBe(200);
+    expect((unprotected.json() as { isFixed: boolean }).isFixed).toBe(false);
+
+    const flexiblePlan = await app.inject({
+      method: "POST",
+      url: "/api/v1/plans/generate",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        planDate: "2026-10-12",
+        readiness: "steady",
+        now: "2026-10-12T05:00:00.000Z",
+      },
+    });
+    expect(flexiblePlan.statusCode).toBe(201);
+    expect(
+      (flexiblePlan.json() as { capacityMinutes: number }).capacityMinutes,
+    ).toBe(180);
+
+    const setNewYork = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/preferences",
+      headers: authHeaders(asha.cookies),
+      payload: { timezone: "America/New_York" },
+    });
+    expect(setNewYork.statusCode).toBe(200);
+    const sameInstantAfterZoneChange = await app.inject({
+      method: "GET",
+      url: "/api/v1/calendar-events?startDate=2026-10-12&endDate=2026-10-12",
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(
+      (
+        sameInstantAfterZoneChange.json() as {
+          items: Array<{ startAt: string; startLocal: string }>;
+        }
+      ).items,
+    ).toEqual([
+      expect.objectContaining({
+        startAt: "2026-10-12T07:00:00Z",
+        startLocal: "2026-10-12T03:00",
+      }),
+    ]);
+
+    const daylightSavingGap = await app.inject({
+      method: "POST",
+      url: "/api/v1/calendar-events",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        title: "Impossible local time",
+        startLocal: "2026-03-08T02:30",
+        endLocal: "2026-03-08T03:30",
+      },
+    });
+    expect(daylightSavingGap.statusCode).toBe(409);
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/calendar-events/${event.id}`,
+      headers: authHeaders(asha.cookies),
+    });
+    expect(deleted.statusCode).toBe(204);
+  });
+
   it("claims v1 local workspace records only for the first secured registration", async () => {
     const now = new Date().toISOString();
     database.run(

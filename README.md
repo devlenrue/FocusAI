@@ -4,14 +4,15 @@
 
 > Capture → Understand → Prioritize → Plan → Focus → Reflect → Adapt
 
-This repository started as an empty project name. The current implementation is an intentionally honest local-development foundation: a polished web experience plus a versioned API, account registration/sign-in, opaque cookie sessions, ownership enforcement, relational persistence, a deterministic decision engine, daily planning, and timestamp-safe focus sessions. It does **not** present cloud deployment, email recovery/verification, LLM coaching, external calendar sync, analytics, habits, projects, or mobile as complete features.
+This repository started as an empty project name. The current implementation is an intentionally honest local-development foundation: a polished web experience plus a versioned API, account registration/sign-in, opaque cookie sessions, ownership enforcement, IANA-time-zone planning preferences, real user-created commitments, relational persistence, a deterministic decision engine, daily planning, and timestamp-safe focus sessions. It does **not** present cloud deployment, email recovery/verification, external calendar sync, LLM coaching, analytics, habits, projects, or mobile as complete features.
 
 ## What works today
 
-- **Responsive web workspace** with a distinctive dark FocusAI visual system and functional Command Center, Task Workspace, Planning Studio, and Focus Studio routes.
+- **Responsive web workspace** with a distinctive dark FocusAI visual system and functional Command Center, Task Workspace, Planning Studio, Schedule & Capacity, and Focus Studio routes.
 - **Task capture and lifecycle basics**: create, search, filter, complete, delete, persist, and use tasks as plan inputs.
 - **Deterministic decision engine** that ranks active tasks, explains ranking signals, produces non-overlapping whole-task schedules, respects fixed commitments supplied to it, accounts for dependencies, and explicitly defers work that does not fit.
-- **Daily plan drafts and approval**: generate a plan from real stored tasks, inspect reasons/capacity/deferred work, approve it, regenerate it, or calculate a remaining-day recovery draft.
+- **Daily plan drafts and approval**: generate a plan from real stored tasks, saved local working hours, and fixed commitments; inspect reasons/capacity/deferred work, approve it, regenerate it, or calculate a remaining-day recovery draft.
+- **Schedule & capacity**: configure an IANA time zone, working day, transition buffer, and recovery high-load cap; create, edit, and remove real commitments in local wall time. Fixed commitments are subtracted from future plan drafts, while flexible items remain visible without reducing capacity.
 - **Zero-shame recovery guardrail**: recovery uses only remaining working capacity and applies a configurable high-cognitive-load cap (20% by default) without erasing history or punishing missed work.
 - **Focus sessions**: start, pause, resume, complete, or stop a persisted session. Elapsed time is calculated from persisted timestamps and accumulated time, not a fragile browser interval.
 - **Private account access**: create an account, sign in/out, and bootstrap an HTTP-only opaque session. Server-side ownership conditions protect tasks, plans, and focus sessions from other accounts.
@@ -114,7 +115,8 @@ All currently implemented endpoints are under `/api/v1`.
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Service        | `GET /health`, `GET /meta`, `GET /dashboard`                                                                                                          |
 | Authentication | `POST /auth/register`, `POST /auth/login`, `GET /auth/session`, `POST /auth/logout`, `POST /auth/session/rotate`, `POST /auth/sessions/revoke-others` |
-| User           | `GET /users/me`                                                                                                                                       |
+| User           | `GET /users/me`, `GET/PATCH /preferences`                                                                                                             |
+| Calendar       | `GET/POST /calendar-events`, `PATCH/DELETE /calendar-events/:eventId`                                                                                 |
 | Tasks          | `GET/POST /tasks`, `PATCH/DELETE /tasks/:taskId`, `POST /tasks/:taskId/complete`                                                                      |
 | Plans          | `GET /plans`, `POST /plans/generate`, `POST /plans/:planId/accept`                                                                                    |
 | Focus          | `GET /focus-sessions`, `GET /focus-sessions/active`, `POST /focus-sessions`, `POST /focus-sessions/:sessionId/transition`                             |
@@ -134,10 +136,10 @@ The API's `/meta` route explicitly reports `authenticated-local-development` mod
 The project is **not production ready yet**. Important work remains:
 
 1. Email verification/password reset, account deactivation/export/deletion UX, and a production datastore adapter.
-2. User preferences UI, IANA time zones, working-hour/break editing, user-created calendar event CRUD, conflict UI, and external calendar authorization.
+2. Multiple availability windows/breaks, recurring commitments, calendar-conflict guidance, and external calendar authorization/sync.
 3. Projects, goals, notes, habits, richer task editing/relationships/recurrence, and analytics sourced from persisted records.
 4. Recommendation feedback, plan editing/reordering, optional LLM-provider abstraction with privacy controls and schema validation, and AI coach actions with confirmations.
 5. React Native/Expo mobile client, offline queue/synchronization/conflict tests, and Android/iOS verification.
-6. Production deployment, backups/restores, monitoring, deployment-specific security review, E2E/browser accessibility tests, and CI execution in GitHub.
+6. Production deployment, backups/restores, monitoring, deployment-specific security review, E2E/browser accessibility tests, and continued remote CI verification.
 
 The ordered implementation plan and risks are maintained in [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md).

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
+  CalendarClock,
   CalendarDays,
   CheckSquare2,
   Command,
@@ -18,6 +19,7 @@ const navigation = [
   { to: "/", label: "Command center", icon: LayoutDashboard, end: true },
   { to: "/tasks", label: "Task workspace", icon: CheckSquare2 },
   { to: "/plan", label: "Planning studio", icon: CalendarDays },
+  { to: "/schedule", label: "Schedule & capacity", icon: CalendarClock },
   { to: "/focus", label: "Focus studio", icon: Timer },
 ];
 
@@ -25,6 +27,7 @@ const titleByPath: Record<string, string> = {
   "/": "Command center",
   "/tasks": "Task workspace",
   "/plan": "Planning studio",
+  "/schedule": "Schedule & capacity",
   "/focus": "Focus studio",
 };
 
