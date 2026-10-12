@@ -171,6 +171,7 @@ This is manual local calendar data, not a connected provider, recurring-event sy
 | 2026-10-12 | Schedule increment command suite                                            | Passed — typecheck, lint, 6 authenticated API integration tests + 4 engine tests, build, format check, and moderate audit                                                 |
 | 2026-10-12 | Isolated real-HTTP schedule smoke                                           | Passed — preference 200, event 201, fixed capacity 120, flexible capacity 180, preserved UTC instant after zone change, DST gap 409; temporary database removed           |
 | 2026-10-12 | Schedule preview/proxy smoke                                                | Passed — `/schedule` served 200; direct and relative-proxy unauthenticated preferences returned 401                                                                       |
+| 2026-10-12 | GitHub Actions run `38235014038`                                            | Passed — clean `npm ci`, lint, typecheck, tests, build, and moderate audit on the pull request branch                                                                     |
 
 ## Risks, limitations, and next highest-priority action
 

@@ -140,6 +140,6 @@ The project is **not production ready yet**. Important work remains:
 3. Projects, goals, notes, habits, richer task editing/relationships/recurrence, and analytics sourced from persisted records.
 4. Recommendation feedback, plan editing/reordering, optional LLM-provider abstraction with privacy controls and schema validation, and AI coach actions with confirmations.
 5. React Native/Expo mobile client, offline queue/synchronization/conflict tests, and Android/iOS verification.
-6. Production deployment, backups/restores, monitoring, deployment-specific security review, E2E/browser accessibility tests, and continued remote CI verification.
+6. Production deployment, backups/restores, monitoring, deployment-specific security review, and E2E/browser accessibility tests.
 
 The ordered implementation plan and risks are maintained in [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md).
