@@ -130,10 +130,11 @@ export function AuthPage() {
               required
             />
           </label>
-          <label>
-            Password
+          <div className="auth-password-field">
+            <label htmlFor="auth-password">Password</label>
             <span className="password-input-wrap">
               <input
+                id="auth-password"
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -141,6 +142,7 @@ export function AuthPage() {
                 placeholder={
                   isRegister ? "At least 12 characters" : "Your password"
                 }
+                aria-describedby={isRegister ? "auth-password-help" : undefined}
                 minLength={12}
                 maxLength={1_024}
                 required
@@ -154,11 +156,11 @@ export function AuthPage() {
               </button>
             </span>
             {isRegister && (
-              <span className="field-helper">
+              <span id="auth-password-help" className="field-helper">
                 Use a memorable passphrase of at least 12 characters.
               </span>
             )}
-          </label>
+          </div>
           {authMutation.isError && (
             <p className="form-error" role="alert">
               <AlertCircle size={16} /> {authMutation.error.message}

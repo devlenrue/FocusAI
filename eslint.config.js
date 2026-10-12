@@ -33,7 +33,12 @@ export default tseslint.config(
     },
   },
   {
-    files: ["apps/api/**/*.ts", "packages/**/*.ts"],
+    files: [
+      "apps/api/**/*.ts",
+      "packages/**/*.ts",
+      "e2e/**/*.ts",
+      "playwright.config.ts",
+    ],
     languageOptions: {
       globals: globals.node,
     },

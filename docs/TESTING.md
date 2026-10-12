@@ -31,17 +31,39 @@ The suite creates a unique temporary SQLite file for each test. It injects reque
 | Preferences, commitments, and time zones | CSRF protection, IANA zone/working-window update, owned calendar CRUD, fixed-capacity subtraction, flexible-event behavior, and DST gap rejection                                                                                   |
 | Invalid registration                     | Consistent 400 validation response shape                                                                                                                                                                                            |
 
+### Chromium browser E2E and automated accessibility
+
+Location: `e2e/authenticated-workspace.spec.ts`
+
+The Playwright configuration starts a dedicated API at `127.0.0.1:3101`, a Vite client at `127.0.0.1:5174`, and a fresh temporary SQLite database at `/tmp/focusai-e2e.db`. CI never reuses a developer server or database. The authenticated browser flow covers:
+
+- account creation and the authenticated shell's keyboard-operable skip link;
+- project, goal, and milestone creation;
+- task capture, deliberate task-to-goal linking in the full editor, preservation of an explicitly set `goal_alignment` value, and linked-goal filtering;
+- both factual completion guards (unfinished linked task, then unfinished milestone), followed by recorded task/milestone/goal completion;
+- Axe scans of the account-creation screen and completed authenticated goal workspace, without rule suppression.
+
+Run it after Chromium is available:
+
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
+
+The GitHub Actions `Browser E2E and accessibility` job installs Chromium with system dependencies and uploads Playwright diagnostics when a browser test fails. The default Playwright browser cache is absent in the current Arena sandbox, but the suite passed locally against a temporary compatible Chromium executable supplied through `PLAYWRIGHT_EXECUTABLE_PATH`; the exact command and result are recorded in `docs/IMPLEMENTATION_STATUS.md`.
+
 ## Commands
 
 ```bash
 npm run lint
 npm run typecheck
 npm run test
+npm run test:e2e # requires an installed Playwright Chromium browser
 npm run build
 npm audit --audit-level=moderate
 ```
 
-Run all checks before describing a code change as verified. The full command set passed for the projects/goals/milestones foundation on 2026-10-12, as logged in `docs/IMPLEMENTATION_STATUS.md`. Rerun it after environment or code changes.
+Run all available checks before describing a code change as verified. The normal command set and the two-test Chromium browser suite pass for the browser-verification increment on 2026-10-12, as logged in `docs/IMPLEMENTATION_STATUS.md`; the independent GitHub-hosted Chromium job remains the pending portable CI confirmation. Rerun the appropriate suite after environment or code changes.
 
 ## Manual smoke workflow
 
@@ -66,10 +88,9 @@ With `npm run dev` running:
 
 No claim is made for the following until tests and supported environments are added:
 
-- browser E2E / visual regression testing;
-- keyboard/screen-reader accessibility audit;
+- manual screen-reader walkthroughs, visual-regression baselines, and a full visual accessibility audit (Axe plus one keyboard path passed in Chromium, while the independent CI job remains pending);
 - email verification, password reset, account deletion/export UX;
-- browser E2E coverage across IANA zones, ambiguous DST fall-back times, and visual/calendar accessibility;
+- browser E2E coverage across IANA zones, ambiguous DST fall-back times, planning, focus, visual/calendar accessibility, and responsive visual states;
 - production cookie/proxy/CORS/CSP deployment configuration;
 - external calendar authorization;
 - LLM provider timeout/schema/privacy behavior;

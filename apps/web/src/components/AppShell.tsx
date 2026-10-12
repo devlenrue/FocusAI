@@ -52,6 +52,9 @@ export function AppShell({
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">
+        Skip to workspace content
+      </a>
       <aside className="side-rail" aria-label="Primary navigation">
         <div className="side-rail-top">
           <FocusMark />
@@ -124,7 +127,9 @@ export function AppShell({
             </button>
           </div>
         </header>
-        <main className="page-content">{children}</main>
+        <main id="main-content" className="page-content" tabIndex={-1}>
+          {children}
+        </main>
       </div>
 
       <nav className="mobile-nav" aria-label="Mobile primary navigation">

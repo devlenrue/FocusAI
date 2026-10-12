@@ -79,4 +79,4 @@ Before a hosted production claim, FocusAI still needs:
 - a production-supported relational database/ORM/backup plan;
 - deployment-specific trusted-proxy, secure-cookie, CORS, CSP, and monitoring configuration;
 - account/session device management UI;
-- independent security review and browser E2E/accessibility testing.
+- independent security review plus manual screen-reader, visual-regression, and broader browser accessibility review (the focused Playwright/Axe workflow is covered separately).

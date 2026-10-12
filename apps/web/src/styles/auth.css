@@ -105,7 +105,8 @@
   gap: 16px;
   margin-top: 21px;
 }
-.auth-form label {
+.auth-form label,
+.auth-password-field {
   display: grid;
   gap: 7px;
   color: var(--text-soft);

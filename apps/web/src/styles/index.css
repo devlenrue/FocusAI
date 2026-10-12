@@ -83,6 +83,27 @@ a {
   outline-offset: 3px;
 }
 
+.skip-link {
+  position: fixed;
+  z-index: 100;
+  top: 12px;
+  left: 12px;
+  padding: 10px 13px;
+  border: 1px solid rgba(178, 250, 255, 0.82);
+  border-radius: 9px;
+  color: #071219;
+  background: var(--cyan-bright);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  font-weight: 800;
+  transform: translateY(-160%);
+  transition: transform 150ms ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
 .app-shell {
   min-height: 100vh;
   display: flex;
