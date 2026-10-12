@@ -2,9 +2,9 @@
 
 > Last reviewed: 2026-10-12
 >
-> Scope: the private account-access screen and authenticated Projects, Goals & Milestones workspace.
+> Scope: the private account-access screen, authenticated Projects/Goals & Milestones workspace, and the current-day recovery dashboard state.
 >
-> Status: automated keyboard, semantic, Axe, responsive-layout, and visual-regression checks are implemented and pass both locally and in GitHub-hosted Chromium CI (run `38249868995`). A human screen-reader walkthrough remains **Blocked** in this sandbox because it does not provide NVDA, VoiceOver, TalkBack, or an equivalent assistive-technology environment.
+> Status: automated keyboard, semantic, Axe, responsive-layout, and visual-regression checks are implemented. The previous four-test scope passed in GitHub-hosted Chromium CI (run `38249868995`); the expanded five-test scope, including recovery-dashboard Axe coverage, passed locally against compatible Chromium on 2026-10-12. A human screen-reader walkthrough remains **Blocked** in this sandbox because it does not provide NVDA, VoiceOver, TalkBack, or an equivalent assistive-technology environment.
 
 ## What is covered automatically
 
@@ -29,7 +29,7 @@ e2e/__visual-baselines__/accessibility-visual.spec/
 └── goals-card-mobile.png
 ```
 
-The browser job compares these images on every pull request and push. GitHub Actions run `38249868995` installed clean Chromium and passed all four browser tests, including these comparisons. Only refresh a baseline after reviewing the intended visual change:
+The browser job compares these images on every pull request and push. GitHub Actions run `38249868995` installed clean Chromium and passed the four browser tests present at that time, including these comparisons. The later local five-test run also passed; its new recovery case is assertion/Axe based rather than a dynamic screenshot baseline. Only refresh a baseline after reviewing the intended visual change:
 
 ```bash
 npm run test:e2e -- e2e/accessibility-visual.spec.ts --update-snapshots
@@ -45,6 +45,7 @@ Never use a baseline refresh to hide an unintended regression. The normal test c
 | The account mode control exposed `tab` roles without tab-to-panel relationships, roving tab stops, or arrow-key behavior.                                      | It now supplies tab-specific panel IDs, `aria-controls`, paired `aria-labelledby`, selected state, and wraparound Arrow/Home/End navigation.               | Keyboard test asserts the semantic state and focus movement.                                                   |
 | Quick capture and task-editor dialogs relied on browser focus behavior; focus could leave the dialog and was not guaranteed to return to the invoking control. | `useDialogFocus` gives both dialogs a deliberate initial focus target, traps Tab/Shift+Tab, supports Escape when not busy, and restores the prior trigger. | Responsive test exercises quick capture; authenticated workflow verifies task-editor initial and return focus. |
 | Mobile navigation labels were visually too small for a six-item touch navigation surface.                                                                      | The label size was increased from `8px` to `10px` while retaining 45px minimum item height.                                                                | Reviewed in the mobile visual baseline and no-overflow assertion.                                              |
+| The dashboard completion meter put `aria-label` on a generic `div`, which Axe identifies as a prohibited ARIA attribute.                                       | The visual meter is now a named `progressbar` with explicit `aria-valuemin`, `aria-valuemax`, and `aria-valuenow` state.                                   | Recovery-dashboard Axe scan passes and asserts the semantic value.                                             |
 
 ## Human assistive-technology walkthrough still required
 

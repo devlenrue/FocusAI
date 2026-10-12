@@ -33,6 +33,39 @@ async function expectNoAxeViolations(page: Page): Promise<void> {
   expect(results.violations).toEqual([]);
 }
 
+async function browserApi(
+  page: Page,
+  path: string,
+  method: "GET" | "PATCH" | "POST",
+  payload?: unknown,
+) {
+  return page.evaluate(
+    async ({ path, method, payload }) => {
+      const csrf = document.cookie
+        .split("; ")
+        .find((cookie) => cookie.startsWith("focusai_csrf="))
+        ?.split("=")
+        .slice(1)
+        .join("=");
+      const response = await fetch(`/api/v1${path}`, {
+        method,
+        credentials: "include",
+        headers: {
+          accept: "application/json",
+          ...(payload ? { "content-type": "application/json" } : {}),
+          ...(csrf && method !== "GET" ? { "x-csrf-token": csrf } : {}),
+        },
+        ...(payload ? { body: JSON.stringify(payload) } : {}),
+      });
+      return {
+        status: response.status,
+        payload: await response.json(),
+      };
+    },
+    { path, method, payload },
+  );
+}
+
 test.describe("authenticated workspace browser flows", () => {
   test("renders an accessible account-creation experience", async ({
     page,
@@ -42,6 +75,88 @@ test.describe("authenticated workspace browser flows", () => {
       page.getByRole("heading", { name: "Focus, safely yours." }),
     ).toBeVisible();
     await expectNoAxeViolations(page);
+  });
+
+  test("offers an explicit, non-punitive recovery choice after planned time has passed", async ({
+    page,
+  }, testInfo) => {
+    test.slow();
+    await register(page, testInfo);
+
+    const taskTitle = `E2E recovery task ${accountSuffix(testInfo)}`;
+    const captureTrigger = page.getByRole("button", {
+      name: "Capture a task",
+    });
+    await captureTrigger.click();
+    const captureDialog = page.getByRole("dialog", {
+      name: "Make space in your mind.",
+    });
+    await captureDialog
+      .getByLabel("What needs your attention?")
+      .fill(taskTitle);
+    await captureDialog.getByLabel("Estimate (minutes)").fill("5");
+    await captureDialog.getByRole("button", { name: "Capture task" }).click();
+    await expect(captureDialog).toBeHidden();
+
+    const preferences = await browserApi(page, "/preferences", "PATCH", {
+      timezone: "UTC",
+      transitionMinutes: 0,
+    });
+    expect(preferences.status).toBe(200);
+    const tasks = (await browserApi(page, "/tasks", "GET")) as {
+      status: number;
+      payload: { items: Array<{ id: string; title: string }> };
+    };
+    expect(tasks.status).toBe(200);
+    const task = tasks.payload.items.find((item) => item.title === taskTitle);
+    expect(task).toBeTruthy();
+    if (!task) throw new Error("Expected the captured recovery task.");
+
+    const referenceTime = Date.now();
+    const planDate = new Date(referenceTime).toISOString().slice(0, 10);
+    const generatedPlan = await browserApi(page, "/plans/generate", "POST", {
+      planDate,
+      readiness: "steady",
+      now: new Date(referenceTime - 25 * 60_000).toISOString(),
+      availability: [
+        {
+          startAt: new Date(referenceTime - 20 * 60_000).toISOString(),
+          endAt: new Date(referenceTime - 5 * 60_000).toISOString(),
+        },
+      ],
+    });
+    expect(generatedPlan.status).toBe(201);
+
+    await page.goto("/");
+    const recoverySignal = page.locator(".recovery-signal");
+    await expect(recoverySignal).toBeVisible();
+    await expect(recoverySignal).toContainText(taskTitle);
+    await expect(recoverySignal).toContainText(
+      "Nothing was marked as failed or moved automatically.",
+    );
+    await expect(
+      page.getByRole("progressbar", { name: "Task completion progress" }),
+    ).toHaveAttribute("aria-valuenow", "0");
+    await expectNoAxeViolations(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect
+      .poll(() =>
+        page.locator("html").evaluate((element) => {
+          return element.scrollWidth <= element.clientWidth;
+        }),
+      )
+      .toBe(true);
+    await expect(recoverySignal).toBeVisible();
+    await recoverySignal
+      .getByRole("link", { name: "Review remaining day" })
+      .click();
+    await expect(page).toHaveURL(/\/plan\?[^#]*recovery=1/);
+    await expect(
+      page.getByText("Pause and re-plan, without a penalty."),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Create recovery draft" }),
+    ).toBeVisible();
   });
 
   test("supports keyboard navigation and an explicit project-to-goal task flow", async ({

@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Circle,
   Clock3,
+  Compass,
   Focus,
   ListChecks,
   Play,
@@ -82,6 +83,7 @@ export function DashboardPage() {
     ? Math.round((dashboard.tasks.completed / dashboard.tasks.total) * 100)
     : 0;
   const planBlocks = dashboard.plan?.blocks ?? [];
+  const recoverySignal = dashboard.recoverySignal;
 
   return (
     <div className="dashboard-page page-stack">
@@ -139,6 +141,58 @@ export function DashboardPage() {
         />
       ) : (
         <>
+          {recoverySignal && (
+            <section
+              className="recovery-signal panel"
+              aria-labelledby="recovery-signal-title"
+            >
+              <div className="recovery-signal-icon" aria-hidden="true">
+                <Compass size={20} />
+              </div>
+              <div className="recovery-signal-copy">
+                <span className="eyebrow">
+                  TIME TO RECONSIDER, NOT CATCH UP
+                </span>
+                <h2 id="recovery-signal-title">
+                  Give the remaining day a new shape.
+                </h2>
+                <p>
+                  {recoverySignal.blocks.length === 1
+                    ? `“${recoverySignal.blocks[0]?.title}” is still open after its planned block ended.`
+                    : `${recoverySignal.blocks.length} planned blocks are still open after their scheduled time ended.`}{" "}
+                  Nothing was marked as failed or moved automatically.
+                </p>
+                <ul aria-label="Open planned blocks to reconsider">
+                  {recoverySignal.blocks.slice(0, 3).map((block) => (
+                    <li key={block.id}>
+                      <strong>{block.title}</strong>
+                      <span>
+                        Planned time ended at{" "}
+                        {formatClock(block.endAt, timeZone)}
+                      </span>
+                    </li>
+                  ))}
+                  {recoverySignal.blocks.length > 3 && (
+                    <li className="recovery-signal-more">
+                      +{recoverySignal.blocks.length - 3} more open planned
+                      block{recoverySignal.blocks.length === 4 ? "" : "s"}
+                    </li>
+                  )}
+                </ul>
+              </div>
+              <div className="recovery-signal-action">
+                <span>
+                  {formatDuration(recoverySignal.totalMinutes)} to reconsider
+                </span>
+                <Link
+                  className="button button-quiet button-small"
+                  to={`/plan?date=${encodeURIComponent(recoverySignal.planDate)}&recovery=1`}
+                >
+                  Review remaining day <ArrowRight size={15} />
+                </Link>
+              </div>
+            </section>
+          )}
           <section className="dashboard-grid dashboard-top-grid">
             <div className="panel priorities-panel">
               <div className="panel-heading">
@@ -221,7 +275,11 @@ export function DashboardPage() {
               </div>
               <div
                 className="progress-track"
-                aria-label={`${completionRate}% of tasks completed`}
+                role="progressbar"
+                aria-label="Task completion progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={completionRate}
               >
                 <span style={{ width: `${completionRate}%` }} />
               </div>

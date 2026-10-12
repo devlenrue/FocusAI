@@ -158,6 +158,7 @@ export function PlanPage() {
     () => searchParams.get("date") ?? "",
   );
   const initialReadiness = searchParams.get("readiness");
+  const recoveryHint = searchParams.get("recovery") === "1";
   const [readiness, setReadiness] = useState<Readiness>(
     initialReadiness === "low" || initialReadiness === "high"
       ? initialReadiness
@@ -204,6 +205,15 @@ export function PlanPage() {
       }),
     onSuccess: async (plan) => {
       setScheduleDraft(null);
+      if (plan.type === "recovery") {
+        setSearchParams(
+          (current) => {
+            current.delete("recovery");
+            return current;
+          },
+          { replace: true },
+        );
+      }
       setActionMessage(
         plan.type === "recovery"
           ? "The remaining day was recalculated from the current timestamp. Review it before committing."
@@ -383,7 +393,10 @@ export function PlanPage() {
                 disabled={isBusy || isEditingSchedule}
                 onClick={() => generatePlan.mutate({ recovery: true })}
               >
-                <RefreshCw size={16} /> Recalculate remaining day
+                <RefreshCw size={16} />
+                {recoveryHint
+                  ? "Create recovery draft"
+                  : "Recalculate remaining day"}
               </button>
             )}
           </div>
@@ -403,6 +416,19 @@ export function PlanPage() {
       {error && (
         <div className="inline-notice error-notice" role="alert">
           <AlertCircle size={16} /> {error.message}
+        </div>
+      )}
+      {recoveryHint && plan && plan.type !== "recovery" && (
+        <div className="recovery-message recovery-hint" role="status">
+          <Compass size={18} />
+          <div>
+            <strong>Pause and re-plan, without a penalty.</strong>
+            <p>
+              A planned block ended while its task remains open. Creating a
+              recovery draft uses only the remaining-day capacity, leaves task
+              status unchanged, and preserves the existing plan as history.
+            </p>
+          </div>
         </div>
       )}
 

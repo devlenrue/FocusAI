@@ -87,6 +87,16 @@ high cognitive scheduled work ≤ floor(remaining capacity × 0.20)
 
 This is a configurable user preference (`high_cognitive_recovery_cap`), **not** a universal psychological law. The cap applies only to recovery mode. A high-cognitive task over that allowance is deferred with a transparent explanation; it is not marked as a failure.
 
+### Current-day recovery signal
+
+The API also derives a read-only recovery signal when the operative current local-day **daily** plan has a block whose end time has passed while its linked task is still open. This is a dashboard prompt, not an engine score or a task-state transition.
+
+- It considers only the current user's current local date and the same draft/accepted-plan precedence used for their visible plan.
+- It excludes completed, blocked, deleted, and breakdown-container tasks, plus a task with an active focus session; a person currently focusing is not presumed to have missed the work.
+- When a recovery draft or approval is the operative current plan, it suppresses the original-daily-plan prompt. The user has already made an explicit response to changed reality.
+- Detection performs **no write**: it does not mark a task failed, complete, deferred, or late, and it does not regenerate a plan.
+- The person may choose **Create recovery draft** in Planning Studio. Only then does the existing recovery generator calculate remaining availability and apply the configurable high-cognitive cap.
+
 ## Deterministic fallback and future hybrid intelligence
 
 The deterministic engine is already the fallback. A future LLM adapter may help with task decomposition, natural-language explanation, or coaching, but must:
@@ -109,7 +119,7 @@ Until this exists, the product must not say an LLM integration is connected.
 - dependency order is respected even when the dependent item has a higher score;
 - the configurable 20% recovery cap applies in recovery mode.
 
-The API integration test additionally verifies a recovery request derives a 120-minute remaining-day window for a 16:00 UTC recovery in the 09:00–18:00 UTC default workday.
+The API integration test additionally verifies a recovery request derives a 120-minute remaining-day window for a 16:00 UTC recovery in the 09:00–18:00 UTC default workday, and that a current passed block produces a read-only recovery signal which clears for an active focus session, an operative recovery plan, or a completed task.
 
 ## Not yet modeled
 

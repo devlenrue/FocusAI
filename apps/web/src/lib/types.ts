@@ -218,6 +218,22 @@ export interface FocusSession {
   updatedAt: string;
 }
 
+export interface RecoverySignal {
+  /** The daily plan whose open block(s) have ended in the current local day. */
+  planId: string;
+  planDate: string;
+  /** Planned minutes offered for reconsideration; task and plan history remain unchanged. */
+  totalMinutes: number;
+  blocks: Array<{
+    id: string;
+    taskId: string;
+    title: string;
+    endAt: string;
+    endLocal: string;
+    durationMinutes: number;
+  }>;
+}
+
 export interface Dashboard {
   date: string;
   topPriorities: Recommendation[];
@@ -228,6 +244,7 @@ export interface Dashboard {
     active: number;
   };
   plan: Plan | null;
+  recoverySignal: RecoverySignal | null;
   focusSession: FocusSession | null;
 }
 

@@ -29,6 +29,7 @@ The suite creates a unique temporary SQLite file for each test. It injects reque
 | Projects, goals, and milestones          | Owned project/goal/milestone CRUD, cross-user rejection, factual task/milestone progress, guarded completion/reopening, active-project guard, goal-link filtering, decomposition inheritance, and release/cascade deletion behavior |
 | Reviewed plan scheduling                 | Owner-only whole-draft schedule save, profile-local conversion, feasible reorder, DST gap/ambiguity rejection, preference-change regeneration requirement, dependency/commitment rejection, and immutable accepted-plan history     |
 | Preferences, commitments, and time zones | CSRF protection, IANA zone/working-window update, owned calendar CRUD, fixed-capacity subtraction, flexible-event behavior, and DST gap rejection                                                                                   |
+| Non-punitive recovery signal             | A current passed block is surfaced without writes; active focus and an operative recovery plan suppress a false/repeated signal, and completing the task clears it                                                                  |
 | Invalid registration                     | Consistent 400 validation response shape                                                                                                                                                                                            |
 
 ### Chromium browser E2E and automated accessibility
@@ -41,7 +42,8 @@ The Playwright configuration starts a dedicated API at `127.0.0.1:3101`, a Vite 
 - project, goal, and milestone creation;
 - task capture, deliberate task-to-goal linking in the full editor, preservation of an explicitly set `goal_alignment` value, and linked-goal filtering;
 - both factual completion guards (unfinished linked task, then unfinished milestone), followed by recorded task/milestone/goal completion;
-- Axe scans of the account-creation screen and completed authenticated goal workspace, without rule suppression.
+- a server-derived current-day recovery prompt for a passed open block, neutral no-penalty wording, its explicit hand-off to Planning Studio, and the recovery-draft CTA;
+- Axe scans of the account-creation screen, recovery-prompt dashboard, and completed authenticated goal workspace, without rule suppression.
 
 Run it after Chromium is available:
 
@@ -83,7 +85,7 @@ npm run build
 npm audit --audit-level=moderate
 ```
 
-Run all available checks before describing a code change as verified. The normal command set and the prior two-test Chromium browser suite passed for the browser-verification increment on 2026-10-12. The expanded four-test visual/semantic suite also passed locally and in clean GitHub-hosted Chromium CI run `38249868995`, as logged in `docs/IMPLEMENTATION_STATUS.md`. Rerun the appropriate suite after environment or code changes.
+Run all available checks before describing a code change as verified. The prior two-test Chromium browser suite and its expanded four-test visual/semantic suite passed on 2026-10-12, including clean GitHub-hosted Chromium CI run `38249868995`. The current five-test browser suite adds the recovery-signal hand-off and dashboard Axe scan; its latest result is recorded in `docs/IMPLEMENTATION_STATUS.md`. Rerun the appropriate suite after environment or code changes.
 
 ## Manual smoke workflow
 

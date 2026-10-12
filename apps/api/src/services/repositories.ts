@@ -136,6 +136,22 @@ export interface PlanDto {
   recovery?: RecoveryPlan["recovery"];
 }
 
+export interface RecoverySignalDto {
+  /** The current daily plan that still has open blocks in the past. */
+  planId: string;
+  planDate: string;
+  /** Total planned minutes offered for reconsideration; no task state is changed. */
+  totalMinutes: number;
+  blocks: Array<{
+    id: string;
+    taskId: string;
+    title: string;
+    endAt: string;
+    endLocal: string;
+    durationMinutes: number;
+  }>;
+}
+
 export interface UserPreferencesDto {
   timezone: string;
   workingDayStart: string;
@@ -292,6 +308,20 @@ interface BlockRow {
   end_at: string;
   duration_minutes: number;
   score: number;
+}
+
+interface RecoverySignalPlanRow {
+  id: string;
+  plan_date: string;
+  type: PlanDto["type"];
+}
+
+interface RecoverySignalBlockRow {
+  id: string;
+  task_id: string;
+  title: string;
+  end_at: string;
+  duration_minutes: number;
 }
 
 interface SchedulePosition {
@@ -1864,9 +1894,66 @@ export class PlanRepository {
     });
   }
 
-  today(userId: string): PlanDto | null {
+  today(userId: string, now = nowIso()): PlanDto | null {
     const timezone = this.preferences.get(userId).timezone;
-    return this.latestForDate(localDateFromUtc(nowIso(), timezone), userId);
+    return this.latestForDate(localDateFromUtc(now, timezone), userId);
+  }
+
+  /**
+   * Offers a recovery choice only for the current local day. It deliberately
+   * makes no writes: a passed block is a prompt to reconsider capacity, not a
+   * failed task or a reason to rewrite plan history.
+   */
+  recoverySignal(userId: string, now = nowIso()): RecoverySignalDto | null {
+    const preference = this.preferences.get(userId);
+    const planDate = localDateFromUtc(now, preference.timezone);
+    const plan = this.database.get<RecoverySignalPlanRow>(
+      `SELECT id, plan_date, type FROM daily_plans
+       WHERE user_id = ? AND plan_date = ? AND status IN ('draft', 'accepted')
+       ORDER BY CASE status WHEN 'draft' THEN 0 WHEN 'accepted' THEN 1 ELSE 2 END,
+                generated_at DESC
+       LIMIT 1`,
+      [userId, planDate],
+    );
+    // A recovery draft/approval is already the user's explicit response to
+    // changed reality. Do not reopen the original daily plan as a debt.
+    if (!plan || plan.type !== "daily") return null;
+
+    const blocks = this.database.all<RecoverySignalBlockRow>(
+      `SELECT sb.id, sb.task_id, sb.title, sb.end_at, sb.duration_minutes
+       FROM scheduled_blocks sb
+       INNER JOIN tasks t ON t.id = sb.task_id AND t.user_id = ?
+       WHERE sb.plan_id = ?
+         AND sb.task_id IS NOT NULL
+         AND sb.end_at <= ?
+         AND t.status <> 'done'
+         AND t.blocked = 0
+         AND t.is_decomposed = 0
+         AND NOT EXISTS (
+           SELECT 1 FROM focus_sessions fs
+           WHERE fs.user_id = ? AND fs.task_id = sb.task_id AND fs.state = 'active'
+         )
+       ORDER BY sb.end_at ASC`,
+      [userId, plan.id, now, userId],
+    );
+    if (blocks.length === 0) return null;
+
+    return {
+      planId: plan.id,
+      planDate: plan.plan_date,
+      totalMinutes: blocks.reduce(
+        (total, block) => total + block.duration_minutes,
+        0,
+      ),
+      blocks: blocks.map((block) => ({
+        id: block.id,
+        taskId: block.task_id,
+        title: block.title,
+        endAt: block.end_at,
+        endLocal: localDateTimeFromUtc(block.end_at, preference.timezone),
+        durationMinutes: block.duration_minutes,
+      })),
+    };
   }
 
   private schedulePreferencesMatch(
@@ -2252,20 +2339,22 @@ export class DashboardService {
     nextAction: EngineDailyPlan["nextAction"];
     tasks: { total: number; completed: number; active: number };
     plan: PlanDto | null;
+    recoverySignal: RecoverySignalDto | null;
     focusSession: FocusSessionDto | null;
   } {
+    const now = nowIso();
     const preferences = this.preferences.get(userId);
     const allTasks = this.tasks.list(userId);
     const active = allTasks.filter((task) => task.status !== "done");
     const actionable = active.filter((task) => !task.isDecomposed);
     const ranked = rankTasks(actionable.map(asPlanningTask), {
       availableMinutes: 8 * 60,
-      now: nowIso(),
+      now,
       readiness: "steady",
     });
-    const plan = this.plans.today(userId);
+    const plan = this.plans.today(userId, now);
     return {
-      date: localDateFromUtc(nowIso(), preferences.timezone),
+      date: localDateFromUtc(now, preferences.timezone),
       topPriorities: plan?.topPriorities.length
         ? plan.topPriorities
         : ranked.slice(0, 3),
@@ -2276,6 +2365,7 @@ export class DashboardService {
         active: active.length,
       },
       plan,
+      recoverySignal: this.plans.recoverySignal(userId, now),
       focusSession: this.sessions.active(userId),
     };
   }

@@ -191,6 +191,12 @@ A new draft supersedes earlier drafts for the same owned user/date. Accepting a 
 
 The decision engine prevents generated overlap. A current daily draft can now receive one explicit complete-schedule update: the repository transaction checks ownership, exact block set, saved availability, current fixed commitments, transition spacing, actionability, and dependency ordering before updating these UTC instants. Accepted/superseded plans and recovery drafts are not editable. The database does not currently use a cross-row exclusion constraint; a production adapter should retain or strengthen this transaction-level conflict check.
 
+### Derived current-day recovery signal
+
+No table, migration, or audit record is created for a recovery signal. On an authenticated dashboard read, the repository combines the current IANA-local plan date, the operative daily plan, its stored blocks, owned task state, and active focus sessions. It returns only passed blocks whose task remains actionable, then the dashboard offers an explicit recovery action.
+
+The derivation deliberately does **not** alter `tasks.status`, `completed_at`, `daily_plans`, `scheduled_blocks`, or focus history. Completed, blocked, deleted, decomposition-container, and actively focused tasks are excluded. If a recovery plan is already the operative current plan, the old daily plan does not produce a repeated signal. The user must explicitly create a recovery draft; that write preserves prior plan/block history.
+
 ### `focus_sessions`
 
 | Column                                           | Notes                                         |

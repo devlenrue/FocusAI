@@ -104,6 +104,12 @@ The repository writes no partial move. In one transaction it verifies that the r
 
 Accepted/superseded plans are immutable history, and recovery drafts deliberately use recalculation instead of manual movement. Drafts created before this saved feasibility context are shown but cannot be edited; regenerating produces an editable daily draft. This preserves existing plans and avoids guessing how legacy constraints should be reconstructed.
 
+## Current-day recovery signal boundary
+
+`DashboardService` asks `PlanRepository` for a derived recovery signal on every authenticated dashboard read. It is intentionally a **read-only** check, not a background job or a productivity score: it looks only at the operative plan for the user's current IANA-local date and finds ended blocks whose owned task is still actionable. Completed, blocked, deleted, breakdown-container, and actively focused tasks do not produce the signal.
+
+The response supplies the affected block snapshot and planned minutes only. It does not mutate a task, plan, or focus session. The dashboard uses neutral language and routes the person to Planning Studio, where a separate explicit **Create recovery draft** action invokes the existing remaining-capacity generator. The prior plan is preserved as history and the user's configurable recovery high-cognitive cap remains authoritative. A current recovery plan suppresses the original daily prompt rather than repeatedly framing it as overdue work.
+
 ## API conventions
 
 - Version prefix: `/api/v1`.

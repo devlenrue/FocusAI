@@ -1344,6 +1344,199 @@ describe("FocusAI authenticated API", () => {
     expect(deleted.statusCode).toBe(204);
   });
 
+  it("offers a non-punitive recovery signal for a current passed block without rewriting work", async () => {
+    const asha = await register("Asha", "asha@example.com");
+    const referenceTime = Date.now();
+    const planDate = new Date(referenceTime).toISOString().slice(0, 10);
+    const availabilityStart = new Date(
+      referenceTime - 20 * 60_000,
+    ).toISOString();
+    const availabilityEnd = new Date(referenceTime - 5 * 60_000).toISOString();
+    const generationNow = new Date(referenceTime - 25 * 60_000).toISOString();
+
+    const preferenceResponse = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/preferences",
+      headers: authHeaders(asha.cookies),
+      payload: { timezone: "UTC", transitionMinutes: 0 },
+    });
+    expect(preferenceResponse.statusCode).toBe(200);
+
+    const taskResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/tasks",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        title: "Reconsider the release outline",
+        estimateMinutes: 5,
+        priority: "high",
+        impact: 4,
+      },
+    });
+    expect(taskResponse.statusCode).toBe(201);
+    const task = taskResponse.json() as { id: string };
+
+    const planResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/plans/generate",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        planDate,
+        readiness: "steady",
+        now: generationNow,
+        availability: [{ startAt: availabilityStart, endAt: availabilityEnd }],
+      },
+    });
+    expect(planResponse.statusCode).toBe(201);
+    const plan = planResponse.json() as { id: string; type: string };
+    expect(plan.type).toBe("daily");
+
+    const dashboardResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/dashboard",
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(dashboardResponse.statusCode).toBe(200);
+    expect(
+      (
+        dashboardResponse.json() as {
+          recoverySignal: {
+            planId: string;
+            planDate: string;
+            totalMinutes: number;
+            blocks: Array<{ taskId: string; title: string }>;
+          } | null;
+        }
+      ).recoverySignal,
+    ).toEqual({
+      planId: plan.id,
+      planDate,
+      totalMinutes: 5,
+      blocks: [
+        expect.objectContaining({
+          taskId: task.id,
+          title: "Reconsider the release outline",
+        }),
+      ],
+    });
+
+    const unchangedPlan = await app.inject({
+      method: "GET",
+      url: `/api/v1/plans?planDate=${planDate}`,
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(unchangedPlan.statusCode).toBe(200);
+    expect((unchangedPlan.json() as { plan: unknown }).plan).toMatchObject({
+      id: plan.id,
+      status: "draft",
+      type: "daily",
+    });
+    const unchangedTask = await app.inject({
+      method: "GET",
+      url: `/api/v1/tasks/${task.id}`,
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(unchangedTask.statusCode).toBe(200);
+    expect(unchangedTask.json()).toMatchObject({
+      status: "todo",
+      completedAt: null,
+    });
+
+    const activeFocus = await app.inject({
+      method: "POST",
+      url: "/api/v1/focus-sessions",
+      headers: authHeaders(asha.cookies),
+      payload: { taskId: task.id, plannedMinutes: 5 },
+    });
+    expect(activeFocus.statusCode).toBe(201);
+    const activeDashboard = await app.inject({
+      method: "GET",
+      url: "/api/v1/dashboard",
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(activeDashboard.statusCode).toBe(200);
+    expect(
+      (activeDashboard.json() as { recoverySignal: unknown }).recoverySignal,
+    ).toBeNull();
+    const focusedSession = activeFocus.json() as { id: string };
+    const stoppedFocus = await app.inject({
+      method: "POST",
+      url: `/api/v1/focus-sessions/${focusedSession.id}/transition`,
+      headers: authHeaders(asha.cookies),
+      payload: { action: "stop" },
+    });
+    expect(stoppedFocus.statusCode).toBe(200);
+
+    const recoveryPlan = await app.inject({
+      method: "POST",
+      url: "/api/v1/plans/generate",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        planDate,
+        readiness: "steady",
+        recovery: true,
+        now: new Date(referenceTime).toISOString(),
+        availability: [
+          {
+            startAt: new Date(referenceTime + 60_000).toISOString(),
+            endAt: new Date(referenceTime + 6 * 60_000).toISOString(),
+          },
+        ],
+      },
+    });
+    expect(recoveryPlan.statusCode).toBe(201);
+    expect(recoveryPlan.json()).toMatchObject({ type: "recovery" });
+    const recoveryDashboard = await app.inject({
+      method: "GET",
+      url: "/api/v1/dashboard",
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(recoveryDashboard.statusCode).toBe(200);
+    expect(
+      (recoveryDashboard.json() as { recoverySignal: unknown }).recoverySignal,
+    ).toBeNull();
+
+    const refreshedDailyPlan = await app.inject({
+      method: "POST",
+      url: "/api/v1/plans/generate",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        planDate,
+        readiness: "steady",
+        now: generationNow,
+        availability: [{ startAt: availabilityStart, endAt: availabilityEnd }],
+      },
+    });
+    expect(refreshedDailyPlan.statusCode).toBe(201);
+    expect(refreshedDailyPlan.json()).toMatchObject({ type: "daily" });
+    const renewedDashboard = await app.inject({
+      method: "GET",
+      url: "/api/v1/dashboard",
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(renewedDashboard.statusCode).toBe(200);
+    expect(
+      (renewedDashboard.json() as { recoverySignal: unknown }).recoverySignal,
+    ).not.toBeNull();
+
+    const completedTask = await app.inject({
+      method: "POST",
+      url: `/api/v1/tasks/${task.id}/complete`,
+      headers: authHeaders(asha.cookies),
+      payload: {},
+    });
+    expect(completedTask.statusCode).toBe(200);
+    const resolvedDashboard = await app.inject({
+      method: "GET",
+      url: "/api/v1/dashboard",
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(resolvedDashboard.statusCode).toBe(200);
+    expect(
+      (resolvedDashboard.json() as { recoverySignal: unknown }).recoverySignal,
+    ).toBeNull();
+  });
+
   it("claims v1 local workspace records only for the first secured registration", async () => {
     const now = new Date().toISOString();
     database.run(
