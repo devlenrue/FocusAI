@@ -15,6 +15,16 @@ export default defineConfig({
   reporter: process.env.CI
     ? [["list"], ["html", { open: "never" }]]
     : [["list"]],
+  expect: {
+    toHaveScreenshot: {
+      animations: "disabled",
+      caret: "hide",
+      scale: "css",
+      maxDiffPixelRatio: 0.01,
+      pathTemplate:
+        "{testDir}/__visual-baselines__/{testFileBaseName}/{arg}{ext}",
+    },
+  },
   use: {
     baseURL,
     trace: "on-first-retry",

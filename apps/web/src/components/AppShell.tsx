@@ -120,6 +120,7 @@ export function AppShell({
             <button
               className="button button-primary capture-button"
               type="button"
+              aria-label="Capture a task"
               onClick={() => setCaptureOpen(true)}
             >
               <Plus size={17} aria-hidden="true" />

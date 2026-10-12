@@ -2203,7 +2203,7 @@ p {
     min-height: 45px;
     border-radius: 10px;
     color: var(--text-faint);
-    font-size: 8px;
+    font-size: 10px;
     font-weight: 800;
   }
   .mobile-nav-link.active {

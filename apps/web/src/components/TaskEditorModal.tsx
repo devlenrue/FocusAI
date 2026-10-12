@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -9,6 +9,7 @@ import {
   Save,
   X,
 } from "lucide-react";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { api } from "@/lib/api";
 import type {
   CognitiveLoad,
@@ -89,6 +90,7 @@ export function TaskEditorModal({
   onClose,
 }: TaskEditorModalProps) {
   const queryClient = useQueryClient();
+  const dialogRef = useRef<HTMLElement>(null);
   const [fields, setFields] = useState<EditorFields | null>(
     task ? toEditorFields(task) : null,
   );
@@ -154,19 +156,12 @@ export function TaskEditorModal({
     },
   });
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (
-        event.key === "Escape" &&
-        !updateTask.isPending &&
-        !decomposeTask.isPending
-      ) {
-        onClose();
-      }
-    }
-    if (open) window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [decomposeTask.isPending, onClose, open, updateTask.isPending]);
+  useDialogFocus({
+    open: open && Boolean(task) && Boolean(fields),
+    dialogRef,
+    onDismiss: onClose,
+    dismissDisabled: updateTask.isPending || decomposeTask.isPending,
+  });
 
   const dependencyOptions = useMemo(
     () =>
@@ -294,10 +289,12 @@ export function TaskEditorModal({
       onMouseDown={() => !isBusy && onClose()}
     >
       <section
+        ref={dialogRef}
         className="modal-card task-editor-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="task-editor-title"
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="modal-header">
@@ -331,7 +328,7 @@ export function TaskEditorModal({
           <label>
             Task title
             <input
-              autoFocus
+              data-dialog-initial-focus
               value={fields.title}
               onChange={(event) => patchFields({ title: event.target.value })}
               maxLength={200}

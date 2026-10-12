@@ -1,6 +1,7 @@
-import { useEffect, useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Check, X } from "lucide-react";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { api } from "@/lib/api";
 import type { Priority } from "@/lib/types";
 
@@ -11,6 +12,7 @@ interface NewTaskModalProps {
 
 export function NewTaskModal({ open, onClose }: NewTaskModalProps) {
   const queryClient = useQueryClient();
+  const dialogRef = useRef<HTMLElement>(null);
   const titleId = useId();
   const descriptionId = useId();
   const [title, setTitle] = useState("");
@@ -34,13 +36,12 @@ export function NewTaskModal({ open, onClose }: NewTaskModalProps) {
     },
   });
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !createTask.isPending) onClose();
-    }
-    if (open) window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [createTask.isPending, onClose, open]);
+  useDialogFocus({
+    open,
+    dialogRef,
+    onDismiss: onClose,
+    dismissDisabled: createTask.isPending,
+  });
 
   if (!open) return null;
 
@@ -63,10 +64,12 @@ export function NewTaskModal({ open, onClose }: NewTaskModalProps) {
       onMouseDown={() => !createTask.isPending && onClose()}
     >
       <section
+        ref={dialogRef}
         className="modal-card"
         role="dialog"
         aria-modal="true"
         aria-labelledby="capture-title"
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="modal-header">
@@ -89,7 +92,7 @@ export function NewTaskModal({ open, onClose }: NewTaskModalProps) {
             What needs your attention?
             <input
               id={titleId}
-              autoFocus
+              data-dialog-initial-focus
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="e.g. Shape the launch brief"

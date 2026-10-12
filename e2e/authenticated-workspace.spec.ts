@@ -106,7 +106,10 @@ test.describe("authenticated workspace browser flows", () => {
     await expect(
       page.getByRole("heading", { name: /Keep the work visible/ }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Capture task" }).click();
+    const taskCaptureTrigger = page.getByRole("button", {
+      name: "Capture task",
+    });
+    await taskCaptureTrigger.click();
 
     const captureDialog = page.getByRole("dialog", {
       name: "Make space in your mind.",
@@ -116,22 +119,28 @@ test.describe("authenticated workspace browser flows", () => {
       .fill(taskTitle);
     await captureDialog.getByRole("button", { name: "Capture task" }).click();
     await expect(captureDialog).toBeHidden();
+    await expect(taskCaptureTrigger).toBeFocused();
 
     const taskRow = page.locator(".task-row").filter({
       has: page.getByRole("heading", { name: taskTitle, exact: true }),
     });
     await expect(taskRow).toBeVisible();
-    await taskRow.getByRole("button", { name: `Edit ${taskTitle}` }).click();
+    const taskEditTrigger = taskRow.getByRole("button", {
+      name: `Edit ${taskTitle}`,
+    });
+    await taskEditTrigger.click();
 
     const editorDialog = page.getByRole("dialog", {
       name: "Shape the work deliberately.",
     });
+    await expect(editorDialog.getByLabel("Task title")).toBeFocused();
     await editorDialog
       .getByRole("combobox", { name: /^Goal/ })
       .selectOption({ label: goalTitle });
     await editorDialog.getByLabel("Goal alignment (0–1)").fill("0.7");
     await editorDialog.getByRole("button", { name: "Save task" }).click();
     await expect(editorDialog).toBeHidden();
+    await expect(taskEditTrigger).toBeFocused();
     await expect(taskRow.getByTitle(goalTitle)).toBeVisible();
 
     await taskRow.getByRole("button", { name: `Edit ${taskTitle}` }).click();

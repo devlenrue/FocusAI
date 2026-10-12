@@ -103,12 +103,12 @@ See [`docs/AUTHENTICATION.md`](docs/AUTHENTICATION.md) for the implemented passw
 npm run lint       # ESLint, zero warnings allowed
 npm run typecheck  # TypeScript across API, web, decision engine, and E2E sources
 npm run test       # API integration + decision-engine unit tests
-npm run test:e2e   # Chromium browser workflow + Axe scans (install Chromium first)
+npm run test:e2e   # Chromium E2E, Axe, keyboard, and focused visual baselines
 npm run build      # Engine/API compilation + Vite production build
 npm audit --audit-level=moderate
 ```
 
-`npm run test:e2e` starts isolated API and Vite servers plus a temporary browser-test database. Install a local browser with `npx playwright install chromium`; GitHub Actions installs Chromium for its separate browser E2E/accessibility job. The most recent verified baseline is recorded in [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md). Do not infer that a command passed on another machine unless you run it there.
+`npm run test:e2e` starts isolated API and Vite servers plus a temporary browser-test database. It includes focused account/goals visual baselines and accessibility checks. Install a local browser with `npx playwright install chromium`; GitHub Actions installs Chromium for its separate browser E2E/accessibility job. See [`docs/ACCESSIBILITY_REVIEW.md`](docs/ACCESSIBILITY_REVIEW.md) before refreshing a screenshot baseline. The most recent verified baseline is recorded in [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md). Do not infer that a command passed on another machine unless you run it there.
 
 ## Current API surface
 
@@ -144,6 +144,6 @@ The project is **not production ready yet**. Important work remains:
 3. Notes and conversion to tasks, habits, task recurrence/tags, and goal-aware analytics/planning behavior with explicit semantics.
 4. Recommendation feedback, richer multi-day/block-splitting and conflict-resolution workflows, optional LLM-provider abstraction with privacy controls and schema validation, and AI coach actions with confirmations.
 5. React Native/Expo mobile client, offline queue/synchronization/conflict tests, and Android/iOS verification.
-6. Production deployment, backups/restores, monitoring, deployment-specific security review, visual regression, and manual screen-reader accessibility reviews.
+6. Production deployment, backups/restores, monitoring, deployment-specific security review, broad all-route visual regression, and manual screen-reader accessibility reviews.
 
 The ordered implementation plan and risks are maintained in [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md).
