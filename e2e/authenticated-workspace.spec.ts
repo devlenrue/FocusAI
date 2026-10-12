@@ -17,6 +17,13 @@ function addUtcDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
+function timerSeconds(value: string | null): number {
+  const match = value?.trim().match(/^(\d+):(\d{2})$/);
+  if (!match)
+    throw new Error(`Expected a timer value, received ${value ?? "null"}.`);
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
 async function register(page: Page, testInfo: TestInfo): Promise<void> {
   const suffix = accountSuffix(testInfo);
   await page.goto("/");
@@ -165,7 +172,7 @@ test.describe("authenticated workspace browser flows", () => {
     ).toBeVisible();
   });
 
-  test("plans around a protected commitment, saves an explicit draft adjustment, and records focus", async ({
+  test("preserves plan history across a rejected conflict and focus reloads", async ({
     page,
   }, testInfo) => {
     test.slow();
@@ -256,6 +263,38 @@ test.describe("authenticated workspace browser flows", () => {
       page.getByText("This draft includes saved manual schedule adjustments."),
     ).toBeVisible();
 
+    await page.getByRole("button", { name: "Edit schedule" }).click();
+    const conflictingStart = page.getByLabel("Starts in UTC");
+    await expect(conflictingStart).toHaveValue(`${planningDate}T10:00`);
+    await conflictingStart.fill(`${planningDate}T09:30`);
+    await page.getByRole("button", { name: "Save schedule" }).click();
+    await expect(page.getByRole("alert")).toContainText(
+      `conflicts with the fixed commitment “${commitmentTitle}”`,
+    );
+    await expectNoAxeViolations(page);
+
+    const persistedPlan = (await browserApi(
+      page,
+      `/plans?planDate=${planningDate}`,
+      "GET",
+    )) as {
+      status: number;
+      payload: {
+        plan: {
+          scheduleEditedAt: string | null;
+          blocks: Array<{ startLocal: string }>;
+        } | null;
+      };
+    };
+    expect(persistedPlan.status).toBe(200);
+    expect(persistedPlan.payload.plan?.scheduleEditedAt).toEqual(
+      expect.any(String),
+    );
+    expect(persistedPlan.payload.plan?.blocks).toEqual([
+      expect.objectContaining({ startLocal: `${planningDate}T10:00` }),
+    ]);
+    await page.getByRole("button", { name: "Discard" }).click();
+
     await page.getByRole("button", { name: "Approve plan" }).click();
     await expect(page.getByText("APPROVED PLAN")).toBeVisible();
     await expect(
@@ -278,12 +317,33 @@ test.describe("authenticated workspace browser flows", () => {
       .fill("Draft the opening without forcing the whole task.");
     await page.getByRole("button", { name: "Start focus" }).click();
     const activeStage = page.locator(".focus-stage-active");
+    const timer = page.locator(".timer-digits");
     await expect(activeStage).toContainText(taskTitle);
     await expect(
       activeStage.getByRole("button", { name: "Pause" }),
     ).toBeVisible();
+    await expect
+      .poll(async () => timerSeconds(await timer.textContent()))
+      .toBeLessThan(5 * 60);
+    const activeRemaining = timerSeconds(await timer.textContent());
+
+    await page.reload();
+    const reloadedTimer = page.locator(".timer-digits");
+    await expect(page.locator(".focus-stage-active")).toContainText(taskTitle);
+    await expect
+      .poll(async () => timerSeconds(await reloadedTimer.textContent()))
+      .toBeLessThanOrEqual(activeRemaining);
+
     await page.getByRole("button", { name: "Pause" }).click();
     await expect(page.getByText("SESSION HELD")).toBeVisible();
+    const pausedTimer = await reloadedTimer.textContent();
+    expect(timerSeconds(pausedTimer)).toBeGreaterThan(0);
+    await page.reload();
+    await expect(page.getByText("SESSION HELD")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Resume" })).toBeVisible();
+    await expect(page.locator(".timer-digits")).toHaveText(pausedTimer ?? "");
+    await expectNoAxeViolations(page);
+
     await page.getByRole("button", { name: "Resume" }).click();
     await expect(page.getByText("SESSION IN PROGRESS")).toBeVisible();
     await page.getByRole("button", { name: "Record complete" }).click();
