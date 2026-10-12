@@ -207,6 +207,7 @@ This is manual local calendar data, not a connected provider, recurring-event sy
 | 2026-10-12 | Reviewed plan-scheduling implementation suite                               | Passed — clean `npm ci`; Prettier write/check; zero-warning lint; API/web/engine typecheck; production build; full root test (8 authenticated API integration tests + 4 decision-engine unit tests)                    |
 | 2026-10-12 | Isolated real-HTTP reviewed-plan scheduling smoke                           | Passed — registration/session/CSRF flow, two persisted tasks, editable daily draft, `PATCH /plans/:id/blocks`, profile-local block times, and manual-edit audit timestamp; temporary SQLite database removed afterward |
 | 2026-10-12 | Planning Studio preview/proxy smoke                                         | Passed — Vite `/plan` shell returned 200 and its relative unauthenticated `/api/v1/plans` proxy returned the expected 401; temporary API database removed afterward                                                    |
+| 2026-10-12 | GitHub Actions runs `38241770223` and `38241775664`                         | Passed — clean CI lint, typecheck, API/decision-engine tests, and production build for the schedule-editing commit on both push and pull-request events                                                                |
 
 ## Risks, limitations, and next highest-priority action
 
