@@ -108,7 +108,7 @@ npm run build      # Engine/API compilation + Vite production build
 npm audit --audit-level=moderate
 ```
 
-`npm run test:e2e` starts isolated API and Vite servers plus a temporary browser-test database. It includes focused account/goals visual baselines, accessibility checks, and the explicit recovery-signal hand-off. Install a local browser with `npx playwright install chromium`; GitHub Actions installs Chromium for its separate browser E2E/accessibility job. See [`docs/ACCESSIBILITY_REVIEW.md`](docs/ACCESSIBILITY_REVIEW.md) before refreshing a screenshot baseline. The most recent verified baseline is recorded in [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md). Do not infer that a command passed on another machine unless you run it there.
+`npm run test:e2e` starts isolated API and Vite servers plus a temporary browser-test database. It includes focused account/goals visual baselines, accessibility checks, the explicit recovery-signal hand-off, protected-capacity planning with a saved schedule adjustment, a focus-session lifecycle, and explicit non-UTC daylight-saving rejection. Install a local browser with `npx playwright install chromium`; GitHub Actions installs Chromium for its separate browser E2E/accessibility job. See [`docs/ACCESSIBILITY_REVIEW.md`](docs/ACCESSIBILITY_REVIEW.md) before refreshing a screenshot baseline. The most recent verified baseline is recorded in [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md). Do not infer that a command passed on another machine unless you run it there.
 
 ## Current API surface
 

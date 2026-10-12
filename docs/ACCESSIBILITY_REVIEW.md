@@ -2,9 +2,9 @@
 
 > Last reviewed: 2026-10-12
 >
-> Scope: the private account-access screen, authenticated Projects/Goals & Milestones workspace, and the current-day recovery dashboard state.
+> Scope: the private account-access screen; authenticated Projects/Goals & Milestones, recovery dashboard, Schedule & Capacity, Planning Studio, and Focus Studio states.
 >
-> Status: automated keyboard, semantic, Axe, responsive-layout, and visual-regression checks are implemented. The previous four-test scope passed in GitHub-hosted Chromium CI (run `38249868995`); the expanded five-test scope, including recovery-dashboard Axe coverage, passed locally against compatible Chromium on 2026-10-12. A human screen-reader walkthrough remains **Blocked** in this sandbox because it does not provide NVDA, VoiceOver, TalkBack, or an equivalent assistive-technology environment.
+> Status: automated keyboard, semantic, Axe, responsive-layout, and visual-regression checks are implemented. The previous four-test scope passed in GitHub-hosted Chromium CI (run `38249868995`); the expanded seven-test scope, including recovery, scheduling/planning, and focus Axe coverage, passed locally against compatible Chromium on 2026-10-12. A human screen-reader walkthrough remains **Blocked** in this sandbox because it does not provide NVDA, VoiceOver, TalkBack, or an equivalent assistive-technology environment.
 
 ## What is covered automatically
 
@@ -15,6 +15,7 @@
 - the mobile navigation landmark and desktop-rail visibility boundary;
 - focus entry, tab wrapping, Escape dismissal, and focus return for quick capture; the task editor shares the same focus-management hook and is exercised by the authenticated workflow;
 - Axe scans of populated Goals & Milestones at desktop and mobile widths;
+- Axe scans of authenticated Schedule & Capacity, Planning Studio, and Focus Studio after its real start/pause/resume/completion lifecycle;
 - six checked-in Chromium screenshots, covering account access plus the populated goals surface and goal card at both breakpoints.
 
 Visual snapshot paths are deliberately versioned rather than ignored:
@@ -29,7 +30,7 @@ e2e/__visual-baselines__/accessibility-visual.spec/
 └── goals-card-mobile.png
 ```
 
-The browser job compares these images on every pull request and push. GitHub Actions run `38249868995` installed clean Chromium and passed the four browser tests present at that time, including these comparisons. The later local five-test run also passed; its new recovery case is assertion/Axe based rather than a dynamic screenshot baseline. Only refresh a baseline after reviewing the intended visual change:
+The browser job compares these images on every pull request and push. GitHub Actions run `38249868995` installed clean Chromium and passed the four browser tests present at that time, including these comparisons. The later local seven-test run also passed; recovery, scheduling/planning, and focus additions are assertion/Axe based rather than dynamic screenshot baselines. Only refresh a baseline after reviewing the intended visual change:
 
 ```bash
 npm run test:e2e -- e2e/accessibility-visual.spec.ts --update-snapshots

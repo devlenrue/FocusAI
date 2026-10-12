@@ -11,6 +11,12 @@ function desktopNavigation(page: Page) {
   return page.locator(".desktop-nav");
 }
 
+function addUtcDays(date: string, days: number): string {
+  const value = new Date(`${date}T12:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
 async function register(page: Page, testInfo: TestInfo): Promise<void> {
   const suffix = accountSuffix(testInfo);
   await page.goto("/");
@@ -157,6 +163,202 @@ test.describe("authenticated workspace browser flows", () => {
     await expect(
       page.getByRole("button", { name: "Create recovery draft" }),
     ).toBeVisible();
+  });
+
+  test("plans around a protected commitment, saves an explicit draft adjustment, and records focus", async ({
+    page,
+  }, testInfo) => {
+    test.slow();
+    await register(page, testInfo);
+
+    const planningDate = addUtcDays(new Date().toISOString().slice(0, 10), 2);
+    const commitmentTitle = `E2E protected time ${accountSuffix(testInfo)}`;
+    const taskTitle = `E2E planned focus task ${accountSuffix(testInfo)}`;
+
+    await desktopNavigation(page)
+      .getByRole("link", { name: "Schedule & capacity" })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: /Protect the time/ }),
+    ).toBeVisible();
+
+    await page.getByLabel("Time zone").fill("UTC");
+    await page.getByLabel("Workday starts").fill("09:00");
+    await page.getByLabel("Workday ends").fill("11:00");
+    await page.getByLabel("Transition buffer").fill("0");
+    await page.getByRole("button", { name: "Save preferences" }).click();
+    await expect(
+      page.getByText(
+        "Planning preferences saved. New plans will use this schedule.",
+      ),
+    ).toBeVisible();
+
+    const commitmentForm = page.locator(".commitment-form");
+    await commitmentForm
+      .getByLabel("What is this time for?")
+      .fill(commitmentTitle);
+    await commitmentForm
+      .getByLabel("Starts in UTC")
+      .fill(`${planningDate}T09:30`);
+    await commitmentForm
+      .getByLabel("Ends in UTC")
+      .fill(`${planningDate}T10:00`);
+    await commitmentForm
+      .getByRole("button", { name: "Add commitment" })
+      .click();
+    await expect(
+      page.getByText(
+        "Commitment saved. Fixed time is now protected in future plan drafts.",
+      ),
+    ).toBeVisible();
+    const commitmentItem = page.locator(".commitment-item").filter({
+      has: page.getByRole("heading", { name: commitmentTitle, exact: true }),
+    });
+    await expect(commitmentItem).toContainText("Protected");
+    await expectNoAxeViolations(page);
+
+    await page.getByRole("button", { name: "Capture a task" }).click();
+    const captureDialog = page.getByRole("dialog", {
+      name: "Make space in your mind.",
+    });
+    await captureDialog
+      .getByLabel("What needs your attention?")
+      .fill(taskTitle);
+    await captureDialog.getByLabel("Estimate (minutes)").fill("30");
+    await captureDialog.getByRole("button", { name: "Capture task" }).click();
+    await expect(captureDialog).toBeHidden();
+
+    await desktopNavigation(page)
+      .getByRole("link", { name: "Planning studio" })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: /Make a day that can/ }),
+    ).toBeVisible();
+    await page.getByLabel("Planning date").fill(planningDate);
+    await page.getByRole("button", { name: "Generate plan" }).click();
+    await expect(page.getByText("SCHEDULE DRAFT")).toBeVisible();
+    const capacityCard = page.locator(".plan-capacity-card");
+    await expect(capacityCard).toContainText("30m");
+    await expect(capacityCard).toContainText("of 1h 30m available");
+    await expect(page.getByRole("heading", { name: taskTitle })).toBeVisible();
+
+    await page.getByRole("button", { name: "Edit schedule" }).click();
+    const draftStart = page.getByLabel("Starts in UTC");
+    await expect(draftStart).toHaveValue(`${planningDate}T09:00`);
+    await draftStart.fill(`${planningDate}T10:00`);
+    await page.getByRole("button", { name: "Save schedule" }).click();
+    await expect(
+      page.getByText(
+        "Your reviewed schedule changes were saved. Feasibility was checked again before anything moved.",
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText("This draft includes saved manual schedule adjustments."),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Approve plan" }).click();
+    await expect(page.getByText("APPROVED PLAN")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Edit schedule" }),
+    ).toHaveCount(0);
+    await expectNoAxeViolations(page);
+
+    await desktopNavigation(page)
+      .getByRole("link", { name: "Focus studio" })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: /One thing/ }),
+    ).toBeVisible();
+    await page
+      .getByRole("combobox", { name: /Linked task/ })
+      .selectOption({ label: `${taskTitle} · 30m` });
+    await page.getByLabel("Focus minutes").fill("5");
+    await page
+      .getByLabel(/A small intention/)
+      .fill("Draft the opening without forcing the whole task.");
+    await page.getByRole("button", { name: "Start focus" }).click();
+    const activeStage = page.locator(".focus-stage-active");
+    await expect(activeStage).toContainText(taskTitle);
+    await expect(
+      activeStage.getByRole("button", { name: "Pause" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Pause" }).click();
+    await expect(page.getByText("SESSION HELD")).toBeVisible();
+    await page.getByRole("button", { name: "Resume" }).click();
+    await expect(page.getByText("SESSION IN PROGRESS")).toBeVisible();
+    await page.getByRole("button", { name: "Record complete" }).click();
+    await expect(
+      page.getByText(
+        "Session recorded. Complete the linked task separately only if the work itself is finished.",
+      ),
+    ).toBeVisible();
+    const historyRow = page.locator(".session-history-row").filter({
+      hasText: taskTitle,
+    });
+    await expect(historyRow).toContainText("completed");
+    await expectNoAxeViolations(page);
+
+    await desktopNavigation(page)
+      .getByRole("link", { name: "Task workspace" })
+      .click();
+    const taskRow = page.locator(".task-row").filter({
+      has: page.getByRole("heading", { name: taskTitle, exact: true }),
+    });
+    await expect(
+      taskRow.getByRole("button", { name: `Mark ${taskTitle} complete` }),
+    ).toBeVisible();
+  });
+
+  test("keeps daylight-saving calendar input explicit in a non-UTC planning zone", async ({
+    page,
+  }, testInfo) => {
+    await register(page, testInfo);
+
+    await desktopNavigation(page)
+      .getByRole("link", { name: "Schedule & capacity" })
+      .click();
+    await page.getByLabel("Time zone").fill("America/New_York");
+    await page.getByRole("button", { name: "Save preferences" }).click();
+    await expect(
+      page.getByText(
+        "Planning preferences saved. New plans will use this schedule.",
+      ),
+    ).toBeVisible();
+
+    const commitmentForm = page.locator(".commitment-form");
+    await commitmentForm
+      .getByLabel("What is this time for?")
+      .fill("DST transition check");
+    await commitmentForm
+      .getByLabel("Starts in America/New_York")
+      .fill("2026-03-08T02:30");
+    await commitmentForm
+      .getByLabel("Ends in America/New_York")
+      .fill("2026-03-08T03:30");
+    await commitmentForm
+      .getByRole("button", { name: "Add commitment" })
+      .click();
+    const daylightSavingError = page.getByRole("alert");
+    await expect(daylightSavingError).toContainText(
+      "That local time is unavailable or ambiguous in the selected time zone.",
+    );
+
+    await commitmentForm
+      .getByLabel("Starts in America/New_York")
+      .fill("2026-11-01T01:30");
+    await commitmentForm
+      .getByLabel("Ends in America/New_York")
+      .fill("2026-11-01T02:30");
+    await commitmentForm
+      .getByRole("button", { name: "Add commitment" })
+      .click();
+    await expect(daylightSavingError).toContainText(
+      "That local time is unavailable or ambiguous in the selected time zone.",
+    );
+    await expect(
+      page.getByText("DST transition check", { exact: true }),
+    ).toHaveCount(0);
+    await expectNoAxeViolations(page);
   });
 
   test("supports keyboard navigation and an explicit project-to-goal task flow", async ({
