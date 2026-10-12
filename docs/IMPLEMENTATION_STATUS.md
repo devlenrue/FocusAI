@@ -171,14 +171,14 @@ This is manual local calendar data, not a connected provider, recurring-event sy
 
 ### Increment 6 — production hardening
 
-| Feature                                 | Status          | Notes                                                                                                                                            |
-| --------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Browser E2E and automated accessibility | **Tested**      | Playwright/Axe coverage passed in local isolated Chromium and GitHub-hosted Chromium CI for the authenticated project/goal/task/milestone flow   |
-| Responsive visual regression baselines  | **In Progress** | Desktop/mobile account and authenticated-goals baselines plus responsive keyboard checks pass locally; clean Chromium CI verification is pending |
-| Manual screen-reader walkthrough        | **Blocked**     | The sandbox has no NVDA, VoiceOver, TalkBack, or equivalent human assistive-technology environment; a documented human protocol is ready         |
-| Backup/restore runbook for hosted data  | **Not Started** | Local copy guidance only                                                                                                                         |
-| Monitoring/error reporting/deployment   | **Not Started** | No deployment configuration supplied                                                                                                             |
-| External calendar integration           | **Not Started** | Never show connected status without real authorization                                                                                           |
+| Feature                                 | Status          | Notes                                                                                                                                          |
+| --------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser E2E and automated accessibility | **Tested**      | Playwright/Axe coverage passed in local isolated Chromium and GitHub-hosted Chromium CI for the authenticated project/goal/task/milestone flow |
+| Responsive visual regression baselines  | **Tested**      | Desktop/mobile account and authenticated-goals baselines plus responsive keyboard checks passed locally and in clean GitHub-hosted Chromium CI |
+| Manual screen-reader walkthrough        | **Blocked**     | The sandbox has no NVDA, VoiceOver, TalkBack, or equivalent human assistive-technology environment; a documented human protocol is ready       |
+| Backup/restore runbook for hosted data  | **Not Started** | Local copy guidance only                                                                                                                       |
+| Monitoring/error reporting/deployment   | **Not Started** | No deployment configuration supplied                                                                                                           |
+| External calendar integration           | **Not Started** | Never show connected status without real authorization                                                                                         |
 
 ### Increment 6 delivery — authenticated browser verification
 
@@ -198,15 +198,15 @@ This is manual local calendar data, not a connected provider, recurring-event sy
 
 **Objective:** Turn the focused browser accessibility coverage into repeatable desktop/mobile visual and keyboard checks, fix genuine semantic or focus-management findings, and avoid claiming that automated browser checks are a human screen-reader certification.
 
-| Area                            | Delivered behavior                                                                                                                                                                                       | Status          |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| Visual baselines                | Six reviewed screenshots cover account access plus populated Goals & Milestones top/card states at `1440×960` and `390×844`; they are checked into `e2e/__visual-baselines__` and compared by Playwright | **Tested**      |
-| Responsive checks               | The browser suite asserts no horizontal overflow, the mobile navigation/desktop-rail boundary, and readable mobile navigation labels                                                                     | **Tested**      |
-| Account-mode semantics          | Auth mode uses a connected tablist/tabpanel, roving tab stop, selection state, and Arrow/Home/End keyboard behavior rather than presentation-only tab roles                                              | **Tested**      |
-| Dialog keyboard behavior        | Quick capture and the task editor now set initial focus, trap Tab/Shift+Tab, handle Escape when safe, and restore focus to the trigger after dismissal                                                   | **Tested**      |
-| Mobile capture naming           | The icon-only compact capture control retains the explicit accessible name “Capture a task”; mobile Axe no longer reports an unnamed button                                                              | **Tested**      |
-| Automated CI visual result      | Local custom Chromium passed all four browser tests; clean GitHub-hosted Chromium confirmation is pending for this increment                                                                             | **In Progress** |
-| Human screen-reader walkthrough | No human screen reader is available in the sandbox. `docs/ACCESSIBILITY_REVIEW.md` records a concrete NVDA/VoiceOver/mobile protocol and the evidence still needed                                       | **Blocked**     |
+| Area                            | Delivered behavior                                                                                                                                                                                       | Status      |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| Visual baselines                | Six reviewed screenshots cover account access plus populated Goals & Milestones top/card states at `1440×960` and `390×844`; they are checked into `e2e/__visual-baselines__` and compared by Playwright | **Tested**  |
+| Responsive checks               | The browser suite asserts no horizontal overflow, the mobile navigation/desktop-rail boundary, and readable mobile navigation labels                                                                     | **Tested**  |
+| Account-mode semantics          | Auth mode uses a connected tablist/tabpanel, roving tab stop, selection state, and Arrow/Home/End keyboard behavior rather than presentation-only tab roles                                              | **Tested**  |
+| Dialog keyboard behavior        | Quick capture and the task editor now set initial focus, trap Tab/Shift+Tab, handle Escape when safe, and restore focus to the trigger after dismissal                                                   | **Tested**  |
+| Mobile capture naming           | The icon-only compact capture control retains the explicit accessible name “Capture a task”; mobile Axe no longer reports an unnamed button                                                              | **Tested**  |
+| Automated CI visual result      | Local custom Chromium and GitHub Actions run `38249868995` each passed all four browser tests, including the checked-in visual comparisons                                                               | **Tested**  |
+| Human screen-reader walkthrough | No human screen reader is available in the sandbox. `docs/ACCESSIBILITY_REVIEW.md` records a concrete NVDA/VoiceOver/mobile protocol and the evidence still needed                                       | **Blocked** |
 
 See [`ACCESSIBILITY_REVIEW.md`](ACCESSIBILITY_REVIEW.md) for screenshot governance, resolved findings, and the manual assistive-technology procedure.
 
@@ -267,6 +267,7 @@ See [`ACCESSIBILITY_REVIEW.md`](ACCESSIBILITY_REVIEW.md) for screenshot governan
 | 2026-10-12 | Isolated Chromium browser E2E and Axe run                                   | Passed — with a temporary Chromium 143 executable provided through `PLAYWRIGHT_EXECUTABLE_PATH`, both Playwright tests passed: account-creation Axe scan plus keyboard/project/goal/milestone/task workflow and Axe scan                  |
 | 2026-10-12 | GitHub Actions run `38246192999`                                            | Passed — clean `npm ci`, lint, typecheck, API/decision-engine tests, build, audit, Chromium installation, and both browser E2E/Axe tests; the failure-artifact step was correctly skipped                                                 |
 | 2026-10-12 | Local responsive visual/accessibility browser suite                         | Passed — temporary Chromium 143 ran 4 browser tests: visual baselines at desktop/mobile, tab semantics, modal focus management, responsive overflow/navigation checks, and Axe scans; a mobile unnamed Capture button was found and fixed |
+| 2026-10-12 | GitHub Actions run `38249868995`                                            | Passed — clean `npm ci`, lint, typecheck, 9 API + 4 decision-engine tests, production build, moderate audit, Chromium install, and all 4 browser E2E/Axe/visual-baseline tests; failure-artifact upload was correctly skipped             |
 
 ## Risks, limitations, and next highest-priority action
 
@@ -283,4 +284,4 @@ See [`ACCESSIBILITY_REVIEW.md`](ACCESSIBILITY_REVIEW.md) for screenshot governan
 | Local browser availability             | The default Playwright cache is absent in this Arena sandbox, but a temporary compatible Chromium executable and clean GitHub Chromium both passed the suite                                | Use the standard Playwright browser install for future local reruns                           |
 | Automated versus manual accessibility  | Axe, semantic keyboard checks, and focused visual baselines now catch regressions on account/goals surfaces but do not replace a human screen-reader review or broad all-route visual audit | Run the documented NVDA/VoiceOver/mobile walkthrough in a supported environment               |
 
-**Next highest-priority action: inspect the clean Chromium CI result for the new visual baselines, then run the documented NVDA/VoiceOver/mobile human walkthrough in a supported environment.** The tested suite intentionally verifies stored project/goal/task/milestone progress and goal-link filtering without changing task scoring, plans, or accepted schedule history. No manual screen-reader certification is claimed yet.
+**Next highest-priority action: run the documented NVDA/VoiceOver/mobile human walkthrough in a supported environment.** The focused browser visual/semantic suite is now tested in local and GitHub-hosted Chromium, but it does not certify real assistive-technology output. The tested suite intentionally verifies stored project/goal/task/milestone progress and goal-link filtering without changing task scoring, plans, or accepted schedule history. No manual screen-reader certification is claimed yet.

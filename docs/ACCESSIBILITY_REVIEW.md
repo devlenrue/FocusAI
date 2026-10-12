@@ -4,7 +4,7 @@
 >
 > Scope: the private account-access screen and authenticated Projects, Goals & Milestones workspace.
 >
-> Status: automated keyboard, semantic, Axe, responsive-layout, and visual-regression checks are implemented and pass locally. A human screen-reader walkthrough remains **Blocked** in this sandbox because it does not provide NVDA, VoiceOver, TalkBack, or an equivalent assistive-technology environment.
+> Status: automated keyboard, semantic, Axe, responsive-layout, and visual-regression checks are implemented and pass both locally and in GitHub-hosted Chromium CI (run `38249868995`). A human screen-reader walkthrough remains **Blocked** in this sandbox because it does not provide NVDA, VoiceOver, TalkBack, or an equivalent assistive-technology environment.
 
 ## What is covered automatically
 
@@ -29,7 +29,7 @@ e2e/__visual-baselines__/accessibility-visual.spec/
 └── goals-card-mobile.png
 ```
 
-The browser job compares these images on every pull request and push. Only refresh a baseline after reviewing the intended visual change:
+The browser job compares these images on every pull request and push. GitHub Actions run `38249868995` installed clean Chromium and passed all four browser tests, including these comparisons. Only refresh a baseline after reviewing the intended visual change:
 
 ```bash
 npm run test:e2e -- e2e/accessibility-visual.spec.ts --update-snapshots

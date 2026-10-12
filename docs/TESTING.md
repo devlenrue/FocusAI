@@ -83,7 +83,7 @@ npm run build
 npm audit --audit-level=moderate
 ```
 
-Run all available checks before describing a code change as verified. The normal command set and the prior two-test Chromium browser suite passed for the browser-verification increment on 2026-10-12. The expanded four-test visual/semantic suite now passes locally and is awaiting its clean GitHub-hosted Chromium result, as logged in `docs/IMPLEMENTATION_STATUS.md`. Rerun the appropriate suite after environment or code changes.
+Run all available checks before describing a code change as verified. The normal command set and the prior two-test Chromium browser suite passed for the browser-verification increment on 2026-10-12. The expanded four-test visual/semantic suite also passed locally and in clean GitHub-hosted Chromium CI run `38249868995`, as logged in `docs/IMPLEMENTATION_STATUS.md`. Rerun the appropriate suite after environment or code changes.
 
 ## Manual smoke workflow
 
