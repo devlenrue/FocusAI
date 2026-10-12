@@ -6,9 +6,9 @@
  * optional AI provider is unavailable.
  */
 
-export type Priority = 'low' | 'medium' | 'high' | 'critical';
-export type CognitiveLoad = 'low' | 'medium' | 'high';
-export type Readiness = 'low' | 'steady' | 'high';
+export type Priority = "low" | "medium" | "high" | "critical";
+export type CognitiveLoad = "low" | "medium" | "high";
+export type Readiness = "low" | "steady" | "high";
 
 export interface PlanningTask {
   id: string;
@@ -54,13 +54,13 @@ export interface PlanningPreferences {
 
 export interface ScoreReason {
   code:
-    | 'overdue'
-    | 'due-soon'
-    | 'high-priority'
-    | 'high-impact'
-    | 'goal-aligned'
-    | 'effort-fit'
-    | 'readiness-fit';
+    | "overdue"
+    | "due-soon"
+    | "high-priority"
+    | "high-impact"
+    | "goal-aligned"
+    | "effort-fit"
+    | "readiness-fit";
   message: string;
 }
 
@@ -83,11 +83,7 @@ export interface ScheduledBlock {
 export interface DeferredTask {
   taskId: string;
   title: string;
-  reason:
-    | 'blocked'
-    | 'dependency'
-    | 'capacity'
-    | 'recovery-cognitive-cap';
+  reason: "blocked" | "dependency" | "capacity" | "recovery-cognitive-cap";
   detail: string;
 }
 
@@ -183,7 +179,7 @@ function effortFitFor(task: PlanningTask, availableMinutes: number): number {
 }
 
 function readinessFitFor(task: PlanningTask, readiness: Readiness): number {
-  return READINESS_VALUES[readiness][task.cognitiveLoad ?? 'medium'];
+  return READINESS_VALUES[readiness][task.cognitiveLoad ?? "medium"];
 }
 
 function scoreReasons(
@@ -197,24 +193,46 @@ function scoreReasons(
   const hoursToDue = due === null ? null : (due - now) / 3_600_000;
 
   if (hoursToDue !== null && hoursToDue <= 0) {
-    reasons.push({ code: 'overdue', message: 'Its deadline has passed, so it needs a deliberate decision today.' });
+    reasons.push({
+      code: "overdue",
+      message:
+        "Its deadline has passed, so it needs a deliberate decision today.",
+    });
   } else if (hoursToDue !== null && hoursToDue <= 24) {
-    reasons.push({ code: 'due-soon', message: 'Its deadline is within the next day.' });
+    reasons.push({
+      code: "due-soon",
+      message: "Its deadline is within the next day.",
+    });
   }
-  if (task.priority === 'high' || task.priority === 'critical') {
-    reasons.push({ code: 'high-priority', message: 'You marked this as a high priority.' });
+  if (task.priority === "high" || task.priority === "critical") {
+    reasons.push({
+      code: "high-priority",
+      message: "You marked this as a high priority.",
+    });
   }
   if (task.impact >= 4) {
-    reasons.push({ code: 'high-impact', message: 'It has a high expected impact.' });
+    reasons.push({
+      code: "high-impact",
+      message: "It has a high expected impact.",
+    });
   }
   if ((task.goalAlignment ?? 0) >= 0.7) {
-    reasons.push({ code: 'goal-aligned', message: 'It strongly supports an active goal.' });
+    reasons.push({
+      code: "goal-aligned",
+      message: "It strongly supports an active goal.",
+    });
   }
   if (effortFitFor(task, availableMinutes) >= 0.75) {
-    reasons.push({ code: 'effort-fit', message: 'Its size fits well within the available capacity.' });
+    reasons.push({
+      code: "effort-fit",
+      message: "Its size fits well within the available capacity.",
+    });
   }
   if (readinessFitFor(task, readiness) >= 0.9) {
-    reasons.push({ code: 'readiness-fit', message: 'It matches the energy level you selected.' });
+    reasons.push({
+      code: "readiness-fit",
+      message: "It matches the energy level you selected.",
+    });
   }
 
   return reasons;
@@ -222,7 +240,10 @@ function scoreReasons(
 
 function coerceWeights(overrides?: Partial<ScoringWeights>): ScoringWeights {
   const merged = { ...DEFAULT_WEIGHTS, ...overrides };
-  const sum = Object.values(merged).reduce((total, weight) => total + weight, 0);
+  const sum = Object.values(merged).reduce(
+    (total, weight) => total + weight,
+    0,
+  );
   if (sum <= 0) return DEFAULT_WEIGHTS;
 
   return {
@@ -245,8 +266,8 @@ export function rankTasks(
     weights?: Partial<ScoringWeights>;
   },
 ): ScoredTask[] {
-  const now = options.now ? toMillis(options.now) ?? Date.now() : Date.now();
-  const readiness = options.readiness ?? 'steady';
+  const now = options.now ? (toMillis(options.now) ?? Date.now()) : Date.now();
+  const readiness = options.readiness ?? "steady";
   const weights = coerceWeights(options.weights);
 
   return tasks
@@ -268,34 +289,53 @@ export function rankTasks(
     })
     .sort((left, right) => {
       if (right.score !== left.score) return right.score - left.score;
-      const leftDue = left.task.dueAt ? toMillis(left.task.dueAt) ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
-      const rightDue = right.task.dueAt ? toMillis(right.task.dueAt) ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
+      const leftDue = left.task.dueAt
+        ? (toMillis(left.task.dueAt) ?? Number.MAX_SAFE_INTEGER)
+        : Number.MAX_SAFE_INTEGER;
+      const rightDue = right.task.dueAt
+        ? (toMillis(right.task.dueAt) ?? Number.MAX_SAFE_INTEGER)
+        : Number.MAX_SAFE_INTEGER;
       if (leftDue !== rightDue) return leftDue - rightDue;
       return left.task.title.localeCompare(right.task.title);
     });
 }
 
-function subtractInterval(intervals: Interval[], excluded: Interval): Interval[] {
+function subtractInterval(
+  intervals: Interval[],
+  excluded: Interval,
+): Interval[] {
   return intervals.flatMap((interval) => {
-    if (excluded.end <= interval.start || excluded.start >= interval.end) return [interval];
+    if (excluded.end <= interval.start || excluded.start >= interval.end)
+      return [interval];
 
     const remaining: Interval[] = [];
     if (excluded.start > interval.start) {
-      remaining.push({ start: interval.start, end: Math.min(excluded.start, interval.end) });
+      remaining.push({
+        start: interval.start,
+        end: Math.min(excluded.start, interval.end),
+      });
     }
     if (excluded.end < interval.end) {
-      remaining.push({ start: Math.max(excluded.end, interval.start), end: interval.end });
+      remaining.push({
+        start: Math.max(excluded.end, interval.start),
+        end: interval.end,
+      });
     }
     return remaining;
   });
 }
 
-function usableIntervals(windows: AvailabilityWindow[], commitments: FixedCommitment[]): Interval[] {
+function usableIntervals(
+  windows: AvailabilityWindow[],
+  commitments: FixedCommitment[],
+): Interval[] {
   const commitmentsAsIntervals = commitments
     .map((commitment) => {
       const start = toMillis(commitment.startAt);
       const end = toMillis(commitment.endAt);
-      return start !== null && end !== null && end > start ? { start, end } : null;
+      return start !== null && end !== null && end > start
+        ? { start, end }
+        : null;
     })
     .filter((interval): interval is Interval => interval !== null);
 
@@ -303,23 +343,41 @@ function usableIntervals(windows: AvailabilityWindow[], commitments: FixedCommit
     .map((window) => {
       const start = toMillis(window.startAt);
       const end = toMillis(window.endAt);
-      return start !== null && end !== null && end > start ? { start, end } : null;
+      return start !== null && end !== null && end > start
+        ? { start, end }
+        : null;
     })
     .filter((interval): interval is Interval => interval !== null)
-    .flatMap((window) => commitmentsAsIntervals.reduce(subtractInterval, [window]))
+    .flatMap((window) =>
+      commitmentsAsIntervals.reduce(subtractInterval, [window]),
+    )
     .filter((interval) => interval.end > interval.start)
     .sort((left, right) => left.start - right.start);
 }
 
 function totalCapacity(intervals: Interval[]): number {
-  return intervals.reduce((total, interval) => total + minutesBetween(interval.start, interval.end), 0);
+  return intervals.reduce(
+    (total, interval) => total + minutesBetween(interval.start, interval.end),
+    0,
+  );
 }
 
-function dependencyEnd(task: PlanningTask, endsByTaskId: Map<string, number>): number {
-  return (task.dependencies ?? []).reduce((latest, dependencyId) => Math.max(latest, endsByTaskId.get(dependencyId) ?? 0), 0);
+function dependencyEnd(
+  task: PlanningTask,
+  endsByTaskId: Map<string, number>,
+): number {
+  return (task.dependencies ?? []).reduce(
+    (latest, dependencyId) =>
+      Math.max(latest, endsByTaskId.get(dependencyId) ?? 0),
+    0,
+  );
 }
 
-function findSlot(intervals: Interval[], durationMinutes: number, after: number): { start: number; end: number; index: number } | null {
+function findSlot(
+  intervals: Interval[],
+  durationMinutes: number,
+  after: number,
+): { start: number; end: number; index: number } | null {
   const duration = durationMinutes * 60_000;
   for (let index = 0; index < intervals.length; index += 1) {
     const interval = intervals[index];
@@ -331,11 +389,19 @@ function findSlot(intervals: Interval[], durationMinutes: number, after: number)
   return null;
 }
 
-function consumeSlot(intervals: Interval[], index: number, taskEnd: number, transitionMinutes: number): Interval[] {
+function consumeSlot(
+  intervals: Interval[],
+  index: number,
+  taskEnd: number,
+  transitionMinutes: number,
+): Interval[] {
   const interval = intervals[index];
   if (!interval) return intervals;
   const protectedStart = taskEnd + transitionMinutes * 60_000;
-  const remaining = protectedStart < interval.end ? { start: protectedStart, end: interval.end } : null;
+  const remaining =
+    protectedStart < interval.end
+      ? { start: protectedStart, end: interval.end }
+      : null;
   return intervals.flatMap((candidate, candidateIndex) => {
     if (candidateIndex !== index) return [candidate];
     return remaining ? [remaining] : [];
@@ -360,7 +426,10 @@ export function generateDailyPlan(input: {
 }): DailyPlan {
   const preferences = input.preferences ?? {};
   const transitionMinutes = Math.max(0, preferences.transitionMinutes ?? 10);
-  const minimumFocusBlockMinutes = Math.max(1, preferences.minimumFocusBlockMinutes ?? 5);
+  const minimumFocusBlockMinutes = Math.max(
+    1,
+    preferences.minimumFocusBlockMinutes ?? 5,
+  );
   let intervals = usableIntervals(input.availability, input.commitments ?? []);
   const availableMinutes = totalCapacity(intervals);
   const ranked = rankTasks(input.tasks, {
@@ -385,7 +454,12 @@ export function generateDailyPlan(input: {
     for (const item of pending) {
       const { task } = item;
       if (task.blocked) {
-        deferred.push({ taskId: task.id, title: task.title, reason: 'blocked', detail: 'This task is marked as blocked.' });
+        deferred.push({
+          taskId: task.id,
+          title: task.title,
+          reason: "blocked",
+          detail: "This task is marked as blocked.",
+        });
         continue;
       }
 
@@ -398,29 +472,41 @@ export function generateDailyPlan(input: {
         deferred.push({
           taskId: task.id,
           title: task.title,
-          reason: 'dependency',
-          detail: 'A required dependency is missing or currently blocked.',
+          reason: "dependency",
+          detail: "A required dependency is missing or currently blocked.",
         });
         continue;
       }
 
       const waitsForDependency = dependencies.some((dependencyId) => {
         const dependency = taskById.get(dependencyId);
-        return dependency && !dependency.completed && !scheduledTaskIds.has(dependencyId);
+        return (
+          dependency &&
+          !dependency.completed &&
+          !scheduledTaskIds.has(dependencyId)
+        );
       });
       if (waitsForDependency) {
         nextPending.push(item);
         continue;
       }
 
-      const durationMinutes = Math.max(minimumFocusBlockMinutes, Math.round(task.estimateMinutes));
-      const slot = findSlot(intervals, durationMinutes, dependencyEnd(task, endsByTaskId));
+      const durationMinutes = Math.max(
+        minimumFocusBlockMinutes,
+        Math.round(task.estimateMinutes),
+      );
+      const slot = findSlot(
+        intervals,
+        durationMinutes,
+        dependencyEnd(task, endsByTaskId),
+      );
       if (!slot) {
         deferred.push({
           taskId: task.id,
           title: task.title,
-          reason: 'capacity',
-          detail: 'It does not fit in the remaining available time without creating a conflict.',
+          reason: "capacity",
+          detail:
+            "It does not fit in the remaining available time without creating a conflict.",
         });
         continue;
       }
@@ -436,7 +522,12 @@ export function generateDailyPlan(input: {
       });
       scheduledTaskIds.add(task.id);
       endsByTaskId.set(task.id, slot.end);
-      intervals = consumeSlot(intervals, slot.index, slot.end, transitionMinutes);
+      intervals = consumeSlot(
+        intervals,
+        slot.index,
+        slot.end,
+        transitionMinutes,
+      );
       madeProgress = true;
     }
 
@@ -445,8 +536,9 @@ export function generateDailyPlan(input: {
         ...nextPending.map((item) => ({
           taskId: item.task.id,
           title: item.task.title,
-          reason: 'dependency' as const,
-          detail: 'Its dependencies form a cycle or could not be scheduled before it.',
+          reason: "dependency" as const,
+          detail:
+            "Its dependencies form a cycle or could not be scheduled before it.",
         })),
       );
       break;
@@ -454,13 +546,22 @@ export function generateDailyPlan(input: {
     pending = nextPending;
   }
 
-  const scheduledMinutes = scheduledBlocks.reduce((total, block) => total + block.durationMinutes, 0);
-  const activeMinutes = ranked.reduce((total, item) => total + Math.max(0, Math.round(item.task.estimateMinutes)), 0);
+  const scheduledMinutes = scheduledBlocks.reduce(
+    (total, block) => total + block.durationMinutes,
+    0,
+  );
+  const activeMinutes = ranked.reduce(
+    (total, item) => total + Math.max(0, Math.round(item.task.estimateMinutes)),
+    0,
+  );
 
   return {
     generatedAt: input.now ?? new Date().toISOString(),
     topPriorities: ranked.filter((item) => !item.task.blocked).slice(0, 3),
-    nextAction: scheduledBlocks[0] ? ranked.find((item) => item.task.id === scheduledBlocks[0]?.taskId) ?? null : null,
+    nextAction: scheduledBlocks[0]
+      ? (ranked.find((item) => item.task.id === scheduledBlocks[0]?.taskId) ??
+        null)
+      : null,
     scheduledBlocks,
     deferred,
     feasibility: {
@@ -485,10 +586,17 @@ export function generateRecoveryPlan(input: {
   readiness?: Readiness;
   preferences?: PlanningPreferences;
 }): RecoveryPlan {
-  const intervals = usableIntervals(input.availability, input.commitments ?? []);
+  const intervals = usableIntervals(
+    input.availability,
+    input.commitments ?? [],
+  );
   const remainingCapacityMinutes = totalCapacity(intervals);
-  const capRatio = clamp(input.preferences?.highCognitiveRecoveryCapRatio ?? 0.2);
-  const highCognitiveCapMinutes = Math.floor(remainingCapacityMinutes * capRatio);
+  const capRatio = clamp(
+    input.preferences?.highCognitiveRecoveryCapRatio ?? 0.2,
+  );
+  const highCognitiveCapMinutes = Math.floor(
+    remainingCapacityMinutes * capRatio,
+  );
   const ranked = rankTasks(input.tasks, {
     now: input.now,
     availableMinutes: remainingCapacityMinutes,
@@ -501,13 +609,16 @@ export function generateRecoveryPlan(input: {
   const cognitiveDeferred: DeferredTask[] = [];
   for (const item of ranked) {
     const task = item.task;
-    const isHighCognitive = task.cognitiveLoad === 'high';
+    const isHighCognitive = task.cognitiveLoad === "high";
     const estimate = Math.max(0, Math.round(task.estimateMinutes));
-    if (isHighCognitive && highCognitiveCommitted + estimate > highCognitiveCapMinutes) {
+    if (
+      isHighCognitive &&
+      highCognitiveCommitted + estimate > highCognitiveCapMinutes
+    ) {
       cognitiveDeferred.push({
         taskId: task.id,
         title: task.title,
-        reason: 'recovery-cognitive-cap',
+        reason: "recovery-cognitive-cap",
         detail: `Recovery mode reserves at most ${highCognitiveCapMinutes} minutes of the remaining capacity for high-cognitive-load work.`,
       });
       continue;
@@ -522,7 +633,11 @@ export function generateRecoveryPlan(input: {
     preferences: input.preferences,
   });
   const highCognitiveScheduledMinutes = plan.scheduledBlocks
-    .filter((block) => eligible.find((task) => task.id === block.taskId)?.cognitiveLoad === 'high')
+    .filter(
+      (block) =>
+        eligible.find((task) => task.id === block.taskId)?.cognitiveLoad ===
+        "high",
+    )
     .reduce((total, block) => total + block.durationMinutes, 0);
 
   return {
@@ -534,8 +649,8 @@ export function generateRecoveryPlan(input: {
       highCognitiveScheduledMinutes,
       message:
         plan.scheduledBlocks.length > 0
-          ? 'The plan protects your remaining capacity and starts with the smallest useful scheduled action.'
-          : 'There is not a realistic block left today. Nothing was forced into an already full schedule.',
+          ? "The plan protects your remaining capacity and starts with the smallest useful scheduled action."
+          : "There is not a realistic block left today. Nothing was forced into an already full schedule.",
     },
   };
 }

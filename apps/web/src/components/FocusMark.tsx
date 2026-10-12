@@ -1,4 +1,4 @@
-import { Sparkles } from 'lucide-react';
+import { Sparkles } from "lucide-react";
 
 export function FocusMark({ compact = false }: { compact?: boolean }) {
   return (

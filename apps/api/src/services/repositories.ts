@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID } from "node:crypto";
 import type {
   AvailabilityWindow,
   CognitiveLoad,
@@ -8,12 +8,15 @@ import type {
   Priority,
   Readiness,
   RecoveryPlan,
-} from '@focusai/decision-engine';
-import { generateDailyPlan, generateRecoveryPlan, rankTasks } from '@focusai/decision-engine';
-import { LOCAL_DEVELOPMENT_USER_ID } from '../config.js';
-import { FocusDatabase } from '../db/database.js';
+} from "@focusai/decision-engine";
+import {
+  generateDailyPlan,
+  generateRecoveryPlan,
+  rankTasks,
+} from "@focusai/decision-engine";
+import { FocusDatabase } from "../db/database.js";
 
-export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'done';
+export type TaskStatus = "backlog" | "todo" | "in_progress" | "done";
 
 export interface TaskDto {
   id: string;
@@ -39,7 +42,7 @@ export interface FocusSessionDto {
   taskId: string | null;
   taskTitle: string | null;
   plannedMinutes: number;
-  state: 'active' | 'paused' | 'completed' | 'stopped';
+  state: "active" | "paused" | "completed" | "stopped";
   startedAt: string;
   stateChangedAt: string;
   completedAt: string | null;
@@ -52,17 +55,17 @@ export interface FocusSessionDto {
 export interface PlanDto {
   id: string;
   planDate: string;
-  status: 'draft' | 'accepted' | 'superseded';
-  type: 'daily' | 'recovery';
+  status: "draft" | "accepted" | "superseded";
+  type: "daily" | "recovery";
   readiness: Readiness;
   generatedAt: string;
   acceptedAt: string | null;
   capacityMinutes: number;
   scheduledMinutes: number;
-  topPriorities: EngineDailyPlan['topPriorities'];
-  nextAction: EngineDailyPlan['nextAction'];
-  deferred: EngineDailyPlan['deferred'];
-  feasibility: EngineDailyPlan['feasibility'];
+  topPriorities: EngineDailyPlan["topPriorities"];
+  nextAction: EngineDailyPlan["nextAction"];
+  deferred: EngineDailyPlan["deferred"];
+  feasibility: EngineDailyPlan["feasibility"];
   blocks: Array<{
     id: string;
     taskId: string | null;
@@ -72,7 +75,7 @@ export interface PlanDto {
     durationMinutes: number;
     score: number;
   }>;
-  recovery?: RecoveryPlan['recovery'];
+  recovery?: RecoveryPlan["recovery"];
 }
 
 export class NotFoundError extends Error {}
@@ -101,7 +104,7 @@ interface FocusRow {
   task_id: string | null;
   task_title: string | null;
   planned_minutes: number;
-  state: FocusSessionDto['state'];
+  state: FocusSessionDto["state"];
   started_at: string;
   state_changed_at: string;
   completed_at: string | null;
@@ -114,8 +117,8 @@ interface FocusRow {
 interface PlanRow {
   id: string;
   plan_date: string;
-  status: PlanDto['status'];
-  type: PlanDto['type'];
+  status: PlanDto["status"];
+  type: PlanDto["type"];
   readiness: Readiness;
   generated_at: string;
   accepted_at: string | null;
@@ -150,11 +153,11 @@ interface EventRow {
 }
 
 interface PlanContext {
-  topPriorities: EngineDailyPlan['topPriorities'];
-  nextAction: EngineDailyPlan['nextAction'];
-  deferred: EngineDailyPlan['deferred'];
-  feasibility: EngineDailyPlan['feasibility'];
-  recovery?: RecoveryPlan['recovery'];
+  topPriorities: EngineDailyPlan["topPriorities"];
+  nextAction: EngineDailyPlan["nextAction"];
+  deferred: EngineDailyPlan["deferred"];
+  feasibility: EngineDailyPlan["feasibility"];
+  recovery?: RecoveryPlan["recovery"];
 }
 
 function nowIso(): string {
@@ -214,7 +217,7 @@ function asPlanningTask(task: TaskDto): PlanningTask {
     goalAlignment: task.goalAlignment,
     cognitiveLoad: task.cognitiveLoad,
     dependencies: task.dependencies,
-    completed: task.status === 'done',
+    completed: task.status === "done",
     blocked: task.blocked,
   };
 }
@@ -227,7 +230,12 @@ function parseContext(contextJson: string): PlanContext {
       topPriorities: [],
       nextAction: null,
       deferred: [],
-      feasibility: { availableMinutes: 0, scheduledMinutes: 0, unscheduledMinutes: 0, isFeasible: true },
+      feasibility: {
+        availableMinutes: 0,
+        scheduledMinutes: 0,
+        unscheduledMinutes: 0,
+        isFeasible: true,
+      },
     };
   }
 }
@@ -235,22 +243,27 @@ function parseContext(contextJson: string): PlanContext {
 export class TaskRepository {
   constructor(private readonly database: FocusDatabase) {}
 
-  list(userId = LOCAL_DEVELOPMENT_USER_ID, filters: { status?: TaskStatus; search?: string } = {}): TaskDto[] {
-    const where = ['user_id = ?'];
+  list(
+    userId: string,
+    filters: { status?: TaskStatus; search?: string } = {},
+  ): TaskDto[] {
+    const where = ["user_id = ?"];
     const parameters: Array<string | number | null> = [userId];
     if (filters.status) {
-      where.push('status = ?');
+      where.push("status = ?");
       parameters.push(filters.status);
     }
     if (filters.search) {
-      where.push('(title LIKE ? COLLATE NOCASE OR description LIKE ? COLLATE NOCASE)');
+      where.push(
+        "(title LIKE ? COLLATE NOCASE OR description LIKE ? COLLATE NOCASE)",
+      );
       const term = `%${filters.search.trim()}%`;
       parameters.push(term, term);
     }
     const rows = this.database.all<TaskRow>(
       `SELECT id, title, description, status, priority, impact, estimate_minutes, actual_minutes,
               due_at, cognitive_load, goal_alignment, blocked, created_at, updated_at, completed_at
-       FROM tasks WHERE ${where.join(' AND ')}
+       FROM tasks WHERE ${where.join(" AND ")}
        ORDER BY CASE status WHEN 'in_progress' THEN 0 WHEN 'todo' THEN 1 WHEN 'backlog' THEN 2 ELSE 3 END,
                 due_at IS NULL, due_at ASC, updated_at DESC`,
       parameters,
@@ -258,20 +271,23 @@ export class TaskRepository {
     return rows.map((row) => rowToTask(row, this.dependenciesForTask(row.id)));
   }
 
-  get(taskId: string, userId = LOCAL_DEVELOPMENT_USER_ID): TaskDto {
+  get(taskId: string, userId: string): TaskDto {
     const row = this.database.get<TaskRow>(
       `SELECT id, title, description, status, priority, impact, estimate_minutes, actual_minutes,
               due_at, cognitive_load, goal_alignment, blocked, created_at, updated_at, completed_at
        FROM tasks WHERE id = ? AND user_id = ?`,
       [taskId, userId],
     );
-    if (!row) throw new NotFoundError('Task not found.');
+    if (!row) throw new NotFoundError("Task not found.");
     return rowToTask(row, this.dependenciesForTask(row.id));
   }
 
   create(
-    input: Omit<TaskDto, 'id' | 'actualMinutes' | 'createdAt' | 'updatedAt' | 'completedAt'>,
-    userId = LOCAL_DEVELOPMENT_USER_ID,
+    input: Omit<
+      TaskDto,
+      "id" | "actualMinutes" | "createdAt" | "updatedAt" | "completedAt"
+    >,
+    userId: string,
   ): TaskDto {
     const id = randomUUID();
     const now = nowIso();
@@ -296,7 +312,7 @@ export class TaskRepository {
           input.blocked ? 1 : 0,
           now,
           now,
-          input.status === 'done' ? now : null,
+          input.status === "done" ? now : null,
         ],
       );
       this.replaceDependencies(id, input.dependencies, userId, now);
@@ -306,26 +322,41 @@ export class TaskRepository {
 
   update(
     taskId: string,
-    input: Partial<Omit<TaskDto, 'id' | 'actualMinutes' | 'createdAt' | 'updatedAt' | 'completedAt'>> & {
+    input: Partial<
+      Omit<
+        TaskDto,
+        "id" | "actualMinutes" | "createdAt" | "updatedAt" | "completedAt"
+      >
+    > & {
       actualMinutes?: number;
     },
-    userId = LOCAL_DEVELOPMENT_USER_ID,
+    userId: string,
   ): TaskDto {
     this.get(taskId, userId);
     const fields: string[] = [];
     const values: Array<string | number | null> = [];
-    const mapping: Array<[keyof typeof input, string, (value: never) => string | number | null]> = [
-      ['title', 'title', (value) => String(value).trim()],
-      ['description', 'description', (value) => (value === undefined ? null : (value as string | null))],
-      ['status', 'status', (value) => String(value)],
-      ['priority', 'priority', (value) => String(value)],
-      ['impact', 'impact', (value) => Number(value)],
-      ['estimateMinutes', 'estimate_minutes', (value) => Number(value)],
-      ['actualMinutes', 'actual_minutes', (value) => Number(value)],
-      ['dueAt', 'due_at', (value) => (value === undefined ? null : (value as string | null))],
-      ['cognitiveLoad', 'cognitive_load', (value) => String(value)],
-      ['goalAlignment', 'goal_alignment', (value) => Number(value)],
-      ['blocked', 'blocked', (value) => (value ? 1 : 0)],
+    const mapping: Array<
+      [keyof typeof input, string, (value: never) => string | number | null]
+    > = [
+      ["title", "title", (value) => String(value).trim()],
+      [
+        "description",
+        "description",
+        (value) => (value === undefined ? null : (value as string | null)),
+      ],
+      ["status", "status", (value) => String(value)],
+      ["priority", "priority", (value) => String(value)],
+      ["impact", "impact", (value) => Number(value)],
+      ["estimateMinutes", "estimate_minutes", (value) => Number(value)],
+      ["actualMinutes", "actual_minutes", (value) => Number(value)],
+      [
+        "dueAt",
+        "due_at",
+        (value) => (value === undefined ? null : (value as string | null)),
+      ],
+      ["cognitiveLoad", "cognitive_load", (value) => String(value)],
+      ["goalAlignment", "goal_alignment", (value) => Number(value)],
+      ["blocked", "blocked", (value) => (value ? 1 : 0)],
     ];
 
     for (const [key, column, transform] of mapping) {
@@ -334,19 +365,22 @@ export class TaskRepository {
         values.push(transform(input[key] as never));
       }
     }
-    if (input.status === 'done') {
-      fields.push('completed_at = COALESCE(completed_at, ?)');
+    if (input.status === "done") {
+      fields.push("completed_at = COALESCE(completed_at, ?)");
       values.push(nowIso());
     } else if (input.status) {
-      fields.push('completed_at = NULL');
+      fields.push("completed_at = NULL");
     }
-    fields.push('updated_at = ?');
+    fields.push("updated_at = ?");
     values.push(nowIso());
 
     this.database.transaction(() => {
       if (fields.length > 1) {
         values.push(taskId, userId);
-        this.database.run(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`, values);
+        this.database.run(
+          `UPDATE tasks SET ${fields.join(", ")} WHERE id = ? AND user_id = ?`,
+          values,
+        );
       }
       if (input.dependencies !== undefined) {
         this.replaceDependencies(taskId, input.dependencies, userId, nowIso());
@@ -355,7 +389,11 @@ export class TaskRepository {
     return this.get(taskId, userId);
   }
 
-  complete(taskId: string, actualMinutes?: number, userId = LOCAL_DEVELOPMENT_USER_ID): TaskDto {
+  complete(
+    taskId: string,
+    actualMinutes: number | undefined,
+    userId: string,
+  ): TaskDto {
     const task = this.get(taskId, userId);
     const now = nowIso();
     this.database.run(
@@ -367,29 +405,41 @@ export class TaskRepository {
     return this.get(taskId, userId);
   }
 
-  delete(taskId: string, userId = LOCAL_DEVELOPMENT_USER_ID): void {
+  delete(taskId: string, userId: string): void {
     this.get(taskId, userId);
-    this.database.run('DELETE FROM tasks WHERE id = ? AND user_id = ?', [taskId, userId]);
+    this.database.run("DELETE FROM tasks WHERE id = ? AND user_id = ?", [
+      taskId,
+      userId,
+    ]);
   }
 
   private dependenciesForTask(taskId: string): string[] {
     return this.database
       .all<{ depends_on_task_id: string }>(
-        'SELECT depends_on_task_id FROM task_dependencies WHERE task_id = ? ORDER BY created_at ASC',
+        "SELECT depends_on_task_id FROM task_dependencies WHERE task_id = ? ORDER BY created_at ASC",
         [taskId],
       )
       .map((row) => row.depends_on_task_id);
   }
 
-  private replaceDependencies(taskId: string, dependencyIds: string[], userId: string, createdAt: string): void {
-    const uniqueDependencyIds = [...new Set(dependencyIds)].filter((dependencyId) => dependencyId !== taskId);
+  private replaceDependencies(
+    taskId: string,
+    dependencyIds: string[],
+    userId: string,
+    createdAt: string,
+  ): void {
+    const uniqueDependencyIds = [...new Set(dependencyIds)].filter(
+      (dependencyId) => dependencyId !== taskId,
+    );
     for (const dependencyId of uniqueDependencyIds) {
       this.get(dependencyId, userId);
     }
-    this.database.run('DELETE FROM task_dependencies WHERE task_id = ?', [taskId]);
+    this.database.run("DELETE FROM task_dependencies WHERE task_id = ?", [
+      taskId,
+    ]);
     for (const dependencyId of uniqueDependencyIds) {
       this.database.run(
-        'INSERT INTO task_dependencies(task_id, depends_on_task_id, created_at) VALUES (?, ?, ?)',
+        "INSERT INTO task_dependencies(task_id, depends_on_task_id, created_at) VALUES (?, ?, ?)",
         [taskId, dependencyId, createdAt],
       );
     }
@@ -397,9 +447,12 @@ export class TaskRepository {
 }
 
 export class FocusSessionRepository {
-  constructor(private readonly database: FocusDatabase, private readonly tasks: TaskRepository) {}
+  constructor(
+    private readonly database: FocusDatabase,
+    private readonly tasks: TaskRepository,
+  ) {}
 
-  active(userId = LOCAL_DEVELOPMENT_USER_ID): FocusSessionDto | null {
+  active(userId: string): FocusSessionDto | null {
     const row = this.database.get<FocusRow>(
       `SELECT fs.id, fs.task_id, t.title AS task_title, fs.planned_minutes, fs.state, fs.started_at,
               fs.state_changed_at, fs.completed_at, fs.accumulated_seconds, fs.note, fs.created_at, fs.updated_at
@@ -411,7 +464,7 @@ export class FocusSessionRepository {
     return row ? rowToFocus(row) : null;
   }
 
-  list(userId = LOCAL_DEVELOPMENT_USER_ID): FocusSessionDto[] {
+  list(userId: string): FocusSessionDto[] {
     return this.database
       .all<FocusRow>(
         `SELECT fs.id, fs.task_id, t.title AS task_title, fs.planned_minutes, fs.state, fs.started_at,
@@ -423,18 +476,38 @@ export class FocusSessionRepository {
       .map(rowToFocus);
   }
 
-  start(input: { taskId: string | null; plannedMinutes: number; note: string | null }, userId = LOCAL_DEVELOPMENT_USER_ID): FocusSessionDto {
+  start(
+    input: {
+      taskId: string | null;
+      plannedMinutes: number;
+      note: string | null;
+    },
+    userId: string,
+  ): FocusSessionDto {
     if (input.taskId) this.tasks.get(input.taskId, userId);
     const now = nowIso();
     const id = randomUUID();
     this.database.transaction(() => {
-      if (this.active(userId)) throw new ConflictError('Finish or stop the current focus session first.');
+      if (this.active(userId))
+        throw new ConflictError(
+          "Finish or stop the current focus session first.",
+        );
       this.database.run(
         `INSERT INTO focus_sessions(
           id, user_id, task_id, planned_minutes, state, started_at, state_changed_at,
           completed_at, accumulated_seconds, note, created_at, updated_at
         ) VALUES (?, ?, ?, ?, 'active', ?, ?, NULL, 0, ?, ?, ?)`,
-        [id, userId, input.taskId, input.plannedMinutes, now, now, input.note, now, now],
+        [
+          id,
+          userId,
+          input.taskId,
+          input.plannedMinutes,
+          now,
+          now,
+          input.note,
+          now,
+          now,
+        ],
       );
     });
     return this.get(id, userId);
@@ -442,51 +515,68 @@ export class FocusSessionRepository {
 
   transition(
     sessionId: string,
-    action: 'pause' | 'resume' | 'complete' | 'stop',
-    userId = LOCAL_DEVELOPMENT_USER_ID,
+    action: "pause" | "resume" | "complete" | "stop",
+    userId: string,
   ): FocusSessionDto {
     return this.database.transaction(() => {
       const current = this.get(sessionId, userId);
       const now = nowIso();
       const activeElapsed =
-        current.state === 'active'
-          ? Math.max(0, Math.floor((Date.parse(now) - Date.parse(current.stateChangedAt)) / 1000))
+        current.state === "active"
+          ? Math.max(
+              0,
+              Math.floor(
+                (Date.parse(now) - Date.parse(current.stateChangedAt)) / 1000,
+              ),
+            )
           : 0;
       const accumulatedSeconds = current.accumulatedSeconds + activeElapsed;
 
-      if (action === 'pause') {
-        if (current.state !== 'active') throw new ConflictError('Only an active session can be paused.');
+      if (action === "pause") {
+        if (current.state !== "active")
+          throw new ConflictError("Only an active session can be paused.");
         this.database.run(
           `UPDATE focus_sessions SET state = 'paused', state_changed_at = ?, accumulated_seconds = ?, updated_at = ?
            WHERE id = ? AND user_id = ?`,
           [now, accumulatedSeconds, now, sessionId, userId],
         );
       }
-      if (action === 'resume') {
-        if (current.state !== 'paused') throw new ConflictError('Only a paused session can be resumed.');
+      if (action === "resume") {
+        if (current.state !== "paused")
+          throw new ConflictError("Only a paused session can be resumed.");
         this.database.run(
           `UPDATE focus_sessions SET state = 'active', state_changed_at = ?, updated_at = ?
            WHERE id = ? AND user_id = ?`,
           [now, now, sessionId, userId],
         );
       }
-      if (action === 'complete' || action === 'stop') {
-        if (current.state !== 'active' && current.state !== 'paused') {
-          throw new ConflictError('Only an active or paused session can be ended.');
+      if (action === "complete" || action === "stop") {
+        if (current.state !== "active" && current.state !== "paused") {
+          throw new ConflictError(
+            "Only an active or paused session can be ended.",
+          );
         }
-        const nextState = action === 'complete' ? 'completed' : 'stopped';
+        const nextState = action === "complete" ? "completed" : "stopped";
         this.database.run(
           `UPDATE focus_sessions
            SET state = ?, state_changed_at = ?, completed_at = ?, accumulated_seconds = ?, updated_at = ?
            WHERE id = ? AND user_id = ?`,
-          [nextState, now, action === 'complete' ? now : null, accumulatedSeconds, now, sessionId, userId],
+          [
+            nextState,
+            now,
+            action === "complete" ? now : null,
+            accumulatedSeconds,
+            now,
+            sessionId,
+            userId,
+          ],
         );
       }
       return this.get(sessionId, userId);
     });
   }
 
-  get(sessionId: string, userId = LOCAL_DEVELOPMENT_USER_ID): FocusSessionDto {
+  get(sessionId: string, userId: string): FocusSessionDto {
     const row = this.database.get<FocusRow>(
       `SELECT fs.id, fs.task_id, t.title AS task_title, fs.planned_minutes, fs.state, fs.started_at,
               fs.state_changed_at, fs.completed_at, fs.accumulated_seconds, fs.note, fs.created_at, fs.updated_at
@@ -494,21 +584,27 @@ export class FocusSessionRepository {
        WHERE fs.id = ? AND fs.user_id = ?`,
       [sessionId, userId],
     );
-    if (!row) throw new NotFoundError('Focus session not found.');
+    if (!row) throw new NotFoundError("Focus session not found.");
     return rowToFocus(row);
   }
 }
 
 export class PlanRepository {
-  constructor(private readonly database: FocusDatabase, private readonly tasks: TaskRepository) {}
+  constructor(
+    private readonly database: FocusDatabase,
+    private readonly tasks: TaskRepository,
+  ) {}
 
-  generate(input: {
-    planDate: string;
-    readiness: Readiness;
-    availability?: AvailabilityWindow[];
-    now?: string;
-    recovery?: boolean;
-  }, userId = LOCAL_DEVELOPMENT_USER_ID): PlanDto {
+  generate(
+    input: {
+      planDate: string;
+      readiness: Readiness;
+      availability?: AvailabilityWindow[];
+      now?: string;
+      recovery?: boolean;
+    },
+    userId: string,
+  ): PlanDto {
     const preference = this.preferences(userId);
     const availability = input.availability?.length
       ? input.availability
@@ -528,11 +624,19 @@ export class PlanRepository {
         highCognitiveRecoveryCapRatio: preference.high_cognitive_recovery_cap,
       },
     };
-    const enginePlan = input.recovery ? generateRecoveryPlan(options) : generateDailyPlan(options);
-    return this.persist(enginePlan, input.planDate, input.readiness, input.recovery ? 'recovery' : 'daily', userId);
+    const enginePlan = input.recovery
+      ? generateRecoveryPlan(options)
+      : generateDailyPlan(options);
+    return this.persist(
+      enginePlan,
+      input.planDate,
+      input.readiness,
+      input.recovery ? "recovery" : "daily",
+      userId,
+    );
   }
 
-  latestForDate(planDate: string, userId = LOCAL_DEVELOPMENT_USER_ID): PlanDto | null {
+  latestForDate(planDate: string, userId: string): PlanDto | null {
     const row = this.database.get<PlanRow>(
       `SELECT id, plan_date, status, type, readiness, generated_at, accepted_at, capacity_minutes,
               scheduled_minutes, context_json
@@ -543,25 +647,27 @@ export class PlanRepository {
     return row ? this.rowToPlan(row) : null;
   }
 
-  accept(planId: string, userId = LOCAL_DEVELOPMENT_USER_ID): PlanDto {
-    const row = this.database.get<PlanRow>('SELECT * FROM daily_plans WHERE id = ? AND user_id = ?', [planId, userId]);
-    if (!row) throw new NotFoundError('Plan not found.');
+  accept(planId: string, userId: string): PlanDto {
+    const row = this.database.get<PlanRow>(
+      "SELECT * FROM daily_plans WHERE id = ? AND user_id = ?",
+      [planId, userId],
+    );
+    if (!row) throw new NotFoundError("Plan not found.");
     const now = nowIso();
     this.database.transaction(() => {
       this.database.run(
         "UPDATE daily_plans SET status = 'superseded' WHERE user_id = ? AND plan_date = ? AND id <> ? AND status = 'accepted'",
         [userId, row.plan_date, planId],
       );
-      this.database.run("UPDATE daily_plans SET status = 'accepted', accepted_at = ? WHERE id = ? AND user_id = ?", [
-        now,
-        planId,
-        userId,
-      ]);
+      this.database.run(
+        "UPDATE daily_plans SET status = 'accepted', accepted_at = ? WHERE id = ? AND user_id = ?",
+        [now, planId, userId],
+      );
     });
-    return this.rowToPlan({ ...row, status: 'accepted', accepted_at: now });
+    return this.rowToPlan({ ...row, status: "accepted", accepted_at: now });
   }
 
-  today(userId = LOCAL_DEVELOPMENT_USER_ID): PlanDto | null {
+  today(userId: string): PlanDto | null {
     return this.latestForDate(isoDateToday(), userId);
   }
 
@@ -571,31 +677,51 @@ export class PlanRepository {
        FROM user_preferences WHERE user_id = ?`,
       [userId],
     );
-    if (!row) throw new NotFoundError('User preferences not found.');
+    if (!row) throw new NotFoundError("User preferences not found.");
     return row;
   }
 
-  private defaultAvailability(planDate: string, preference: PreferenceRow): AvailabilityWindow[] {
+  private defaultAvailability(
+    planDate: string,
+    preference: PreferenceRow,
+  ): AvailabilityWindow[] {
     const startAt = `${planDate}T${preference.working_day_start}:00.000Z`;
     const endAt = `${planDate}T${preference.working_day_end}:00.000Z`;
     if (Date.parse(endAt) <= Date.parse(startAt)) {
-      throw new ConflictError('Working hours are not a valid availability window.');
+      throw new ConflictError(
+        "Working hours are not a valid availability window.",
+      );
     }
     return [{ startAt, endAt }];
   }
 
-  private remainingAvailability(planDate: string, preference: PreferenceRow, now?: string): AvailabilityWindow[] {
+  private remainingAvailability(
+    planDate: string,
+    preference: PreferenceRow,
+    now?: string,
+  ): AvailabilityWindow[] {
     const [window] = this.defaultAvailability(planDate, preference);
     if (!window) return [];
-    const remainingStart = Math.max(Date.parse(window.startAt), Date.parse(now ?? nowIso()));
+    const remainingStart = Math.max(
+      Date.parse(window.startAt),
+      Date.parse(now ?? nowIso()),
+    );
     const end = Date.parse(window.endAt);
     if (!Number.isFinite(remainingStart) || remainingStart >= end) return [];
-    return [{ startAt: new Date(remainingStart).toISOString(), endAt: window.endAt }];
+    return [
+      { startAt: new Date(remainingStart).toISOString(), endAt: window.endAt },
+    ];
   }
 
-  private commitmentsFor(availability: AvailabilityWindow[], userId: string): FixedCommitment[] {
+  private commitmentsFor(
+    availability: AvailabilityWindow[],
+    userId: string,
+  ): FixedCommitment[] {
     const start = availability.map((window) => window.startAt).sort()[0];
-    const end = availability.map((window) => window.endAt).sort().at(-1);
+    const end = availability
+      .map((window) => window.endAt)
+      .sort()
+      .at(-1);
     if (!start || !end) return [];
     return this.database
       .all<EventRow>(
@@ -603,14 +729,19 @@ export class PlanRepository {
          WHERE user_id = ? AND is_fixed = 1 AND start_at < ? AND end_at > ?`,
         [userId, end, start],
       )
-      .map((event) => ({ id: event.id, title: event.title, startAt: event.start_at, endAt: event.end_at }));
+      .map((event) => ({
+        id: event.id,
+        title: event.title,
+        startAt: event.start_at,
+        endAt: event.end_at,
+      }));
   }
 
   private persist(
     plan: EngineDailyPlan | RecoveryPlan,
     planDate: string,
     readiness: Readiness,
-    type: PlanDto['type'],
+    type: PlanDto["type"],
     userId: string,
   ): PlanDto {
     const id = randomUUID();
@@ -619,7 +750,9 @@ export class PlanRepository {
       nextAction: plan.nextAction,
       deferred: plan.deferred,
       feasibility: plan.feasibility,
-      ...(type === 'recovery' ? { recovery: (plan as RecoveryPlan).recovery } : {}),
+      ...(type === "recovery"
+        ? { recovery: (plan as RecoveryPlan).recovery }
+        : {}),
     };
     this.database.transaction(() => {
       this.database.run(
@@ -647,12 +780,25 @@ export class PlanRepository {
         this.database.run(
           `INSERT INTO scheduled_blocks(id, plan_id, task_id, title, start_at, end_at, duration_minutes, score, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [randomUUID(), id, block.taskId, block.title, block.startAt, block.endAt, block.durationMinutes, block.score, nowIso()],
+          [
+            randomUUID(),
+            id,
+            block.taskId,
+            block.title,
+            block.startAt,
+            block.endAt,
+            block.durationMinutes,
+            block.score,
+            nowIso(),
+          ],
         );
       }
     });
-    const row = this.database.get<PlanRow>('SELECT * FROM daily_plans WHERE id = ? AND user_id = ?', [id, userId]);
-    if (!row) throw new NotFoundError('Plan was not persisted.');
+    const row = this.database.get<PlanRow>(
+      "SELECT * FROM daily_plans WHERE id = ? AND user_id = ?",
+      [id, userId],
+    );
+    if (!row) throw new NotFoundError("Plan was not persisted.");
     return this.rowToPlan(row);
   }
 
@@ -698,29 +844,31 @@ export class DashboardService {
     private readonly sessions: FocusSessionRepository,
   ) {}
 
-  get(userId = LOCAL_DEVELOPMENT_USER_ID): {
+  get(userId: string): {
     date: string;
-    topPriorities: EngineDailyPlan['topPriorities'];
-    nextAction: EngineDailyPlan['nextAction'];
+    topPriorities: EngineDailyPlan["topPriorities"];
+    nextAction: EngineDailyPlan["nextAction"];
     tasks: { total: number; completed: number; active: number };
     plan: PlanDto | null;
     focusSession: FocusSessionDto | null;
   } {
     const allTasks = this.tasks.list(userId);
-    const active = allTasks.filter((task) => task.status !== 'done');
+    const active = allTasks.filter((task) => task.status !== "done");
     const ranked = rankTasks(active.map(asPlanningTask), {
       availableMinutes: 8 * 60,
       now: nowIso(),
-      readiness: 'steady',
+      readiness: "steady",
     });
     const plan = this.plans.today(userId);
     return {
       date: isoDateToday(),
-      topPriorities: plan?.topPriorities.length ? plan.topPriorities : ranked.slice(0, 3),
+      topPriorities: plan?.topPriorities.length
+        ? plan.topPriorities
+        : ranked.slice(0, 3),
       nextAction: plan?.nextAction ?? ranked[0] ?? null,
       tasks: {
         total: allTasks.length,
-        completed: allTasks.filter((task) => task.status === 'done').length,
+        completed: allTasks.filter((task) => task.status === "done").length,
         active: active.length,
       },
       plan,

@@ -1,6 +1,15 @@
-export const SCHEMA_VERSION = 1;
+export interface SchemaMigration {
+  version: number;
+  sql: string;
+}
 
-export const schemaSql = `
+/**
+ * Migrations are intentionally additive. New workspaces apply each version in
+ * order; existing v1 local workspaces receive only the v2 auth migration.
+ */
+export const SCHEMA_VERSION = 2;
+
+const schemaV1Sql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version INTEGER PRIMARY KEY,
   applied_at TEXT NOT NULL
@@ -113,3 +122,35 @@ CREATE TABLE IF NOT EXISTS focus_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_focus_sessions_user_state ON focus_sessions(user_id, state, started_at DESC);
 `;
+
+const schemaV2Sql = `
+ALTER TABLE users ADD COLUMN password_hash TEXT;
+ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1));
+ALTER TABLE users ADD COLUMN last_login_at TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_normalized ON users(lower(email));
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  csrf_hash TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_active ON auth_sessions(user_id, revoked_at, expires_at);
+
+CREATE TABLE IF NOT EXISTS auth_audit_events (
+  id TEXT PRIMARY KEY,
+  user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  event_type TEXT NOT NULL CHECK (event_type IN ('registered', 'signed_in', 'sign_in_failed', 'signed_out', 'session_rotated', 'sessions_revoked', 'legacy_workspace_claimed')),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auth_audit_events_user_time ON auth_audit_events(user_id, created_at DESC);
+`;
+
+export const migrations: readonly SchemaMigration[] = [
+  { version: 1, sql: schemaV1Sql },
+  { version: 2, sql: schemaV2Sql },
+];

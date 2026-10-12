@@ -1,27 +1,48 @@
-import { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
-import { CalendarDays, CheckSquare2, Command, LayoutDashboard, Plus, Sparkles, Timer } from 'lucide-react';
-import { FocusMark } from './FocusMark';
-import { NewTaskModal } from './NewTaskModal';
+import { useState } from "react";
+import { NavLink, useLocation } from "react-router-dom";
+import {
+  CalendarDays,
+  CheckSquare2,
+  Command,
+  LayoutDashboard,
+  LogOut,
+  Plus,
+  Sparkles,
+  Timer,
+} from "lucide-react";
+import type { AuthUser } from "@/lib/types";
+import { FocusMark } from "./FocusMark";
+import { NewTaskModal } from "./NewTaskModal";
 
 const navigation = [
-  { to: '/', label: 'Command center', icon: LayoutDashboard, end: true },
-  { to: '/tasks', label: 'Task workspace', icon: CheckSquare2 },
-  { to: '/plan', label: 'Planning studio', icon: CalendarDays },
-  { to: '/focus', label: 'Focus studio', icon: Timer },
+  { to: "/", label: "Command center", icon: LayoutDashboard, end: true },
+  { to: "/tasks", label: "Task workspace", icon: CheckSquare2 },
+  { to: "/plan", label: "Planning studio", icon: CalendarDays },
+  { to: "/focus", label: "Focus studio", icon: Timer },
 ];
 
 const titleByPath: Record<string, string> = {
-  '/': 'Command center',
-  '/tasks': 'Task workspace',
-  '/plan': 'Planning studio',
-  '/focus': 'Focus studio',
+  "/": "Command center",
+  "/tasks": "Task workspace",
+  "/plan": "Planning studio",
+  "/focus": "Focus studio",
 };
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  user,
+  onSignOut,
+  isSigningOut,
+}: {
+  children: React.ReactNode;
+  user: AuthUser;
+  onSignOut: () => void;
+  isSigningOut: boolean;
+}) {
   const location = useLocation();
   const [isCaptureOpen, setCaptureOpen] = useState(false);
-  const title = titleByPath[location.pathname] ?? 'FocusAI';
+  const title = titleByPath[location.pathname] ?? "FocusAI";
+  const initial = user.displayName.trim().slice(0, 1).toUpperCase() || "F";
 
   return (
     <div className="app-shell">
@@ -33,7 +54,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {navigation.map((item) => {
               const Icon = item.icon;
               return (
-                <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) =>
+                    `nav-link ${isActive ? "active" : ""}`
+                  }
+                >
                   <Icon size={18} aria-hidden="true" />
                   <span>{item.label}</span>
                 </NavLink>
@@ -41,11 +69,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             })}
           </nav>
         </div>
-        <div className="rail-insight" aria-label="Local development mode">
-          <span className="rail-insight-icon"><Sparkles size={15} /></span>
+        <div
+          className="rail-insight"
+          aria-label="Private authenticated workspace"
+        >
+          <span className="rail-insight-icon">
+            <Sparkles size={15} />
+          </span>
           <div>
-            <strong>Local mode</strong>
-            <p>Private to this device</p>
+            <strong>Private workspace</strong>
+            <p>Session protected</p>
           </div>
         </div>
       </aside>
@@ -57,8 +90,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span>{title}</span>
           </div>
           <div className="top-bar-actions">
-            <span className="shortcut-hint"><Command size={14} /> N</span>
-            <button className="button button-primary capture-button" type="button" onClick={() => setCaptureOpen(true)}>
+            <span className="shortcut-hint">
+              <Command size={14} /> N
+            </span>
+            <div className="account-chip" title={user.email}>
+              <span className="account-avatar" aria-hidden="true">
+                {initial}
+              </span>
+              <span className="account-name">{user.displayName}</span>
+              <button
+                className="account-signout"
+                type="button"
+                onClick={onSignOut}
+                disabled={isSigningOut}
+                aria-label="Sign out securely"
+              >
+                <LogOut size={15} />
+              </button>
+            </div>
+            <button
+              className="button button-primary capture-button"
+              type="button"
+              onClick={() => setCaptureOpen(true)}
+            >
               <Plus size={17} aria-hidden="true" />
               <span>Capture</span>
             </button>
@@ -71,14 +125,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {navigation.map((item) => {
           const Icon = item.icon;
           return (
-            <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`}>
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) =>
+                `mobile-nav-link ${isActive ? "active" : ""}`
+              }
+            >
               <Icon size={19} aria-hidden="true" />
-              <span>{item.label.split(' ')[0]}</span>
+              <span>{item.label.split(" ")[0]}</span>
             </NavLink>
           );
         })}
       </nav>
-      <NewTaskModal open={isCaptureOpen} onClose={() => setCaptureOpen(false)} />
+      <NewTaskModal
+        open={isCaptureOpen}
+        onClose={() => setCaptureOpen(false)}
+      />
     </div>
   );
 }

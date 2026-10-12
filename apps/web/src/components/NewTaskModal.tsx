@@ -1,8 +1,8 @@
-import { useEffect, useId, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, Check, X } from 'lucide-react';
-import { api } from '@/lib/api';
-import type { Priority } from '@/lib/types';
+import { useEffect, useId, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { AlertCircle, Check, X } from "lucide-react";
+import { api } from "@/lib/api";
+import type { Priority } from "@/lib/types";
 
 interface NewTaskModalProps {
   open: boolean;
@@ -13,33 +13,33 @@ export function NewTaskModal({ open, onClose }: NewTaskModalProps) {
   const queryClient = useQueryClient();
   const titleId = useId();
   const descriptionId = useId();
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState<Priority>('medium');
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [priority, setPriority] = useState<Priority>("medium");
   const [estimateMinutes, setEstimateMinutes] = useState(30);
-  const [dueAt, setDueAt] = useState('');
+  const [dueAt, setDueAt] = useState("");
 
   const createTask = useMutation({
     mutationFn: api.createTask,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      await queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      await queryClient.invalidateQueries({ queryKey: ['plan'] });
-      setTitle('');
-      setDescription('');
-      setPriority('medium');
+      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      await queryClient.invalidateQueries({ queryKey: ["plan"] });
+      setTitle("");
+      setDescription("");
+      setPriority("medium");
       setEstimateMinutes(30);
-      setDueAt('');
+      setDueAt("");
       onClose();
     },
   });
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape' && !createTask.isPending) onClose();
+      if (event.key === "Escape" && !createTask.isPending) onClose();
     }
-    if (open) window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    if (open) window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, [createTask.isPending, onClose, open]);
 
   if (!open) return null;
@@ -57,7 +57,11 @@ export function NewTaskModal({ open, onClose }: NewTaskModalProps) {
   }
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={() => !createTask.isPending && onClose()}>
+    <div
+      className="modal-backdrop"
+      role="presentation"
+      onMouseDown={() => !createTask.isPending && onClose()}
+    >
       <section
         className="modal-card"
         role="dialog"
@@ -70,7 +74,13 @@ export function NewTaskModal({ open, onClose }: NewTaskModalProps) {
             <span className="eyebrow">QUICK CAPTURE</span>
             <h2 id="capture-title">Make space in your mind.</h2>
           </div>
-          <button className="icon-button" type="button" aria-label="Close quick capture" onClick={onClose} disabled={createTask.isPending}>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close quick capture"
+            onClick={onClose}
+            disabled={createTask.isPending}
+          >
             <X size={18} />
           </button>
         </header>
@@ -101,7 +111,12 @@ export function NewTaskModal({ open, onClose }: NewTaskModalProps) {
           <div className="form-grid">
             <label>
               Priority
-              <select value={priority} onChange={(event) => setPriority(event.target.value as Priority)}>
+              <select
+                value={priority}
+                onChange={(event) =>
+                  setPriority(event.target.value as Priority)
+                }
+              >
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
@@ -115,12 +130,18 @@ export function NewTaskModal({ open, onClose }: NewTaskModalProps) {
                 min="1"
                 max="720"
                 value={estimateMinutes}
-                onChange={(event) => setEstimateMinutes(Number(event.target.value))}
+                onChange={(event) =>
+                  setEstimateMinutes(Number(event.target.value))
+                }
               />
             </label>
             <label>
               Due <span className="field-optional">optional</span>
-              <input type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
+              <input
+                type="datetime-local"
+                value={dueAt}
+                onChange={(event) => setDueAt(event.target.value)}
+              />
             </label>
           </div>
           {createTask.isError && (
@@ -130,12 +151,21 @@ export function NewTaskModal({ open, onClose }: NewTaskModalProps) {
             </p>
           )}
           <footer className="modal-actions">
-            <button className="button button-quiet" type="button" onClick={onClose} disabled={createTask.isPending}>
+            <button
+              className="button button-quiet"
+              type="button"
+              onClick={onClose}
+              disabled={createTask.isPending}
+            >
               Cancel
             </button>
-            <button className="button button-primary" type="submit" disabled={!title.trim() || createTask.isPending}>
+            <button
+              className="button button-primary"
+              type="submit"
+              disabled={!title.trim() || createTask.isPending}
+            >
               <Check size={16} />
-              {createTask.isPending ? 'Capturing…' : 'Capture task'}
+              {createTask.isPending ? "Capturing…" : "Capture task"}
             </button>
           </footer>
         </form>

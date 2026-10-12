@@ -31,13 +31,15 @@ The web client uses `/api/v1/*`, never `localhost` or a hard-coded remote API ho
 
 ### Server modules
 
-| Module | Responsibility |
-| --- | --- |
-| `apps/api/src/app.ts` | Fastify construction, headers/CORS, OpenAPI UI, routes, consistent errors and request IDs |
-| `apps/api/src/db/database.ts` | Local connection lifecycle, migration ledger, foreign-key/WAL pragmas, transaction wrapper |
-| `apps/api/src/db/schema.ts` | Versioned current schema definition |
-| `apps/api/src/services/repositories.ts` | Repository/service boundaries for tasks, focus sessions, plans, and dashboard aggregation |
-| `packages/decision-engine` | Pure ranking/scheduling/recovery rules; no HTTP, database, or provider dependency |
+| Module                                  | Responsibility                                                                                                                                   |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/api/src/app.ts`                   | Fastify construction, opaque cookie/session wiring, CSRF guard, rate limits, headers/CORS, OpenAPI UI, routes, consistent errors and request IDs |
+| `apps/api/src/services/auth.ts`         | Registration/sign-in, opaque session issue/rotation/revocation, ownership context, minimal audit events, legacy local-data claim                 |
+| `apps/api/src/security/passwords.ts`    | Memory-hard scrypt hashing and constant-time password verification                                                                               |
+| `apps/api/src/db/database.ts`           | Local connection lifecycle, migration ledger, foreign-key/WAL pragmas, transaction wrapper                                                       |
+| `apps/api/src/db/schema.ts`             | Versioned current schema definition                                                                                                              |
+| `apps/api/src/services/repositories.ts` | Repository/service boundaries for tasks, focus sessions, plans, and dashboard aggregation                                                        |
+| `packages/decision-engine`              | Pure ranking/scheduling/recovery rules; no HTTP, database, or provider dependency                                                                |
 
 ## Why the decision engine is separate
 
@@ -59,34 +61,29 @@ The current adapter uses Node 22's `node:sqlite` module and opens a git-ignored 
 2. It ensures a migration ledger exists.
 3. It checks the latest applied schema version.
 4. It applies the additive schema SQL in a transaction and records the version.
-5. It creates only a local-development identity/preferences row required for the current single-workspace mode.
+5. It does not create an account or sample activity; a user registers through the real authentication flow.
 
 No startup reset, seed task, migration deletion, or test data is directed at the normal local database. API integration tests inject a separate temporary database instance.
 
 ### Why not claim MySQL/Prisma today?
 
-The repository had no database service, credentials, database driver, or existing ORM. Node's built-in SQLite made a real, testable relational persistence slice possible without pretending a database server was provisioned. It is a **development adapter**, not a production selection. Increment 2 will introduce authenticated request context and a supported production relational adapter/migration workflow; the current normalized schema/repositories are designed to make that replacement bounded.
+The repository had no database service, credentials, database driver, or existing ORM. Node's built-in SQLite made a real, testable relational persistence slice possible without pretending a database server was provisioned. It is a **development adapter**, not a production selection. Increment 2 has introduced authenticated request context; a supported production relational adapter/migration workflow remains planned. The current normalized schema/repositories are designed to make that replacement bounded.
 
 ## Authentication and authorization boundary
 
-There is deliberately no authentication UI or secure multi-user claim in this increment. The API uses a named `local-development-user` internally and exposes the limitation through `/api/v1/meta`. Repository methods take a `userId` argument now so endpoint authentication middleware can replace that context later rather than rewriting all data access.
+FocusAI now exposes a real registration/sign-in experience and uses server-verified opaque cookie sessions. `onRequest` resolves a session hash to an `AuthContext`; every workspace route has a read or write auth pre-handler. Repository methods require a user ID—there is no longer a default local user context.
 
-Before any hosted deployment, this must be replaced with:
+Unsafe routes additionally verify a session-bound double-submit CSRF token. The readable CSRF cookie must match the `X-CSRF-Token` header and a hash stored against the session. Session values themselves are HTTP-only and only hashes are persisted. Registration/sign-in routes have stricter rate limits, and minimal audit events exclude passwords/tokens/private note bodies.
 
-- Argon2id-compatible credential handling or an approved external identity provider;
-- secure HTTP-only session/cookie or token rotation architecture;
-- endpoint authentication and resource ownership checks;
-- CSRF/CORS policy appropriate to the selected session design;
-- rate limits on auth and sensitive mutation endpoints;
-- audit logging and privacy controls.
+See [`AUTHENTICATION.md`](AUTHENTICATION.md) for the exact current protocol, password parameters, legacy claim behavior, and remaining hosted-production requirements.
 
 ## API conventions
 
 - Version prefix: `/api/v1`.
 - JSON input is validated with Zod before calling services.
 - Structured errors contain `code`, safe `message`, and Fastify `requestId`.
-- `404` is used for owned-resource absence, `409` for impossible transitions/concurrent focus, and `400` for validation.
-- Helmet supplies security headers. API logs redact authorization/cookie headers.
+- `401` represents missing/revoked sessions, `403` a rejected CSRF write, `404` an owned-resource absence, `409` impossible transitions/concurrent focus, and `400` validation.
+- Helmet supplies security headers. API logs redact authorization/cookie headers and password request fields.
 - `/api/docs` exposes the currently registered OpenAPI interface.
 
 Current routes are listed in the README; endpoint coverage grows only when the corresponding workflow is implemented.
@@ -104,7 +101,7 @@ When a session pauses or ends, the server calculates the elapsed interval from `
 
 ## Web UX foundations
 
-The web app intentionally exposes only four implemented navigation surfaces:
+The web app starts at a real registration/sign-in gate, then intentionally exposes only four implemented workspace navigation surfaces:
 
 1. **Command center** — real task counts, persisted top priorities, next action, plan blocks, and focus status.
 2. **Task workspace** — capture, search, filter, complete, delete, and focus a task.
@@ -115,10 +112,10 @@ The empty, error, loading, disabled, confirmation, and success states are part o
 
 ## Known architectural risks
 
-| Risk | Current mitigation | Planned resolution |
-| --- | --- | --- |
-| `node:sqlite` is experimental in Node 22 | Isolated behind one adapter; test database injection | Supported production driver/ORM in Increment 2 |
-| Single local workspace is not authorization | `/meta` truthfully identifies it; repositories already accept user IDs | Auth middleware + ownership integration tests |
-| Schedule uses UTC working-window defaults | UI disclosure and explicit availability API input | IANA time-zone preferences and calendar UI |
-| Whole-task scheduler cannot yet split tasks | Explicit capacity deferral instead of hidden overbooking | Task decomposition and user-approved splitting |
-| No optional LLM provider | Deterministic engine fully works alone | Provider interface, timeout/privacy/schema controls |
+| Risk                                        | Current mitigation                                                       | Planned resolution                                                           |
+| ------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| `node:sqlite` is experimental in Node 22    | Isolated behind one adapter; test database injection                     | Supported production driver/ORM in production hardening                      |
+| Local adapter is not a hosted deployment    | Auth/ownership/CSRF work in local mode, with explicit `/meta` disclosure | Production database, HTTPS/proxy, email, backup and monitoring configuration |
+| Schedule uses UTC working-window defaults   | UI disclosure and explicit availability API input                        | IANA time-zone preferences and calendar UI                                   |
+| Whole-task scheduler cannot yet split tasks | Explicit capacity deferral instead of hidden overbooking                 | Task decomposition and user-approved splitting                               |
+| No optional LLM provider                    | Deterministic engine fully works alone                                   | Provider interface, timeout/privacy/schema controls                          |

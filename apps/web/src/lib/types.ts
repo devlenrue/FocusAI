@@ -1,7 +1,14 @@
-export type Priority = 'low' | 'medium' | 'high' | 'critical';
-export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'done';
-export type CognitiveLoad = 'low' | 'medium' | 'high';
-export type Readiness = 'low' | 'steady' | 'high';
+export type Priority = "low" | "medium" | "high" | "critical";
+export type TaskStatus = "backlog" | "todo" | "in_progress" | "done";
+export type CognitiveLoad = "low" | "medium" | "high";
+export type Readiness = "low" | "steady" | "high";
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  displayName: string;
+  createdAt: string;
+}
 
 export interface Task {
   id: string;
@@ -58,15 +65,15 @@ export interface ScheduledBlock {
 export interface DeferredTask {
   taskId: string;
   title: string;
-  reason: 'blocked' | 'dependency' | 'capacity' | 'recovery-cognitive-cap';
+  reason: "blocked" | "dependency" | "capacity" | "recovery-cognitive-cap";
   detail: string;
 }
 
 export interface Plan {
   id: string;
   planDate: string;
-  status: 'draft' | 'accepted' | 'superseded';
-  type: 'daily' | 'recovery';
+  status: "draft" | "accepted" | "superseded";
+  type: "daily" | "recovery";
   readiness: Readiness;
   generatedAt: string;
   acceptedAt: string | null;
@@ -95,7 +102,7 @@ export interface FocusSession {
   taskId: string | null;
   taskTitle: string | null;
   plannedMinutes: number;
-  state: 'active' | 'paused' | 'completed' | 'stopped';
+  state: "active" | "paused" | "completed" | "stopped";
   startedAt: string;
   stateChangedAt: string;
   completedAt: string | null;

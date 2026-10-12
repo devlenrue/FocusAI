@@ -36,14 +36,14 @@ The weights are configurable per engine call and are renormalized if overridden.
 
 ### Input normalization
 
-| Signal | Current rule |
-| --- | --- |
-| Urgency | overdue = 1.0; ≤8h = .97; ≤24h = .88; ≤72h = .70; ≤7d = .42; later = .18; unknown = .15 |
-| Priority | low = .20; medium = .50; high = .78; critical = 1.0 |
-| Impact | Map user-provided 1–5 to 0–1 |
-| Goal alignment | Explicit 0–1 value; currently no goal UI populates it |
-| Effort fit | Higher for work that can realistically fit available capacity |
-| Readiness fit | Matches low/steady/high user readiness to low/medium/high cognitive load |
+| Signal         | Current rule                                                                            |
+| -------------- | --------------------------------------------------------------------------------------- |
+| Urgency        | overdue = 1.0; ≤8h = .97; ≤24h = .88; ≤72h = .70; ≤7d = .42; later = .18; unknown = .15 |
+| Priority       | low = .20; medium = .50; high = .78; critical = 1.0                                     |
+| Impact         | Map user-provided 1–5 to 0–1                                                            |
+| Goal alignment | Explicit 0–1 value; currently no goal UI populates it                                   |
+| Effort fit     | Higher for work that can realistically fit available capacity                           |
+| Readiness fit  | Matches low/steady/high user readiness to low/medium/high cognitive load                |
 
 The engine emits human-readable reasons only for signals that actually apply, such as “Its deadline is within the next day,” “It has a high expected impact,” or “It matches the energy level you selected.” These are deterministic reasons based on the submitted fields.
 

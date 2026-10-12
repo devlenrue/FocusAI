@@ -1,6 +1,10 @@
-import { AlertTriangle, ArrowRight, LoaderCircle } from 'lucide-react';
+import { AlertTriangle, ArrowRight, LoaderCircle } from "lucide-react";
 
-export function LoadingState({ label = 'Connecting your workspace…' }: { label?: string }) {
+export function LoadingState({
+  label = "Connecting your workspace…",
+}: {
+  label?: string;
+}) {
   return (
     <div className="state-card loading-state" role="status" aria-live="polite">
       <LoaderCircle className="spin" size={22} aria-hidden="true" />
@@ -9,7 +13,13 @@ export function LoadingState({ label = 'Connecting your workspace…' }: { label
   );
 }
 
-export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+export function ErrorState({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry?: () => void;
+}) {
   return (
     <div className="state-card error-state" role="alert">
       <AlertTriangle size={21} aria-hidden="true" />
@@ -18,7 +28,11 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
         <p>{message}</p>
       </div>
       {onRetry && (
-        <button className="button button-quiet button-small" type="button" onClick={onRetry}>
+        <button
+          className="button button-quiet button-small"
+          type="button"
+          onClick={onRetry}
+        >
           Try again <ArrowRight size={15} />
         </button>
       )}
@@ -39,7 +53,9 @@ export function EmptyState({
 }) {
   return (
     <section className="empty-state">
-      <div className="empty-orb" aria-hidden="true"><span /></div>
+      <div className="empty-orb" aria-hidden="true">
+        <span />
+      </div>
       <span className="eyebrow">{eyebrow}</span>
       <h2>{title}</h2>
       <p>{body}</p>
