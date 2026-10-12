@@ -44,10 +44,37 @@ export interface Task {
   cognitiveLoad: CognitiveLoad;
   goalAlignment: number;
   blocked: boolean;
+  /** Set only for records created through a confirmed task breakdown. */
+  parentTaskId: string | null;
+  /** Containers are preserved for context but excluded from future plan drafts. */
+  isDecomposed: boolean;
   dependencies: string[];
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+}
+
+export interface TaskInput {
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: Priority;
+  impact: number;
+  estimateMinutes: number;
+  dueAt: string | null;
+  cognitiveLoad: CognitiveLoad;
+  goalAlignment: number;
+  blocked: boolean;
+  dependencies: string[];
+}
+
+export type TaskUpdateInput = Partial<TaskInput> & {
+  actualMinutes?: number;
+};
+
+export interface TaskDecomposition {
+  parent: Task;
+  steps: Task[];
 }
 
 export interface ScoreReason {

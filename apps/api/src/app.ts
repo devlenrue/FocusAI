@@ -168,8 +168,19 @@ const taskCreateSchema = z.object({
   dependencies: z.array(z.string().uuid()).max(50).optional().default([]),
 });
 
-const taskUpdateSchema = taskCreateSchema.partial().extend({
-  actualMinutes: z.number().int().min(0).max(10_080).optional(),
+const taskUpdateSchema = taskCreateSchema
+  .partial()
+  .extend({
+    actualMinutes: z.number().int().min(0).max(10_080).optional(),
+  })
+  .refine((input) => Object.keys(input).length > 0, {
+    message: "Provide at least one task value to update.",
+  });
+
+const taskDecompositionSchema = z.object({
+  // Each step is supplied by the user-facing review form. The API never
+  // invents, expands, or silently creates steps.
+  steps: z.array(taskCreateSchema).min(1).max(25),
 });
 
 const planRequestSchema = z.object({
@@ -489,6 +500,16 @@ export async function buildApp(
     };
   });
 
+  app.get(
+    "/api/v1/tasks/:taskId",
+    { preHandler: protectedRead },
+    async (request) => {
+      const context = requireAuthentication(request);
+      const { taskId } = parse(taskIdSchema, request.params);
+      return tasks.get(taskId, context.user.id);
+    },
+  );
+
   app.post(
     "/api/v1/tasks",
     { preHandler: protectedWrite },
@@ -508,6 +529,19 @@ export async function buildApp(
       const { taskId } = parse(taskIdSchema, request.params);
       const body = parse(taskUpdateSchema, request.body);
       return tasks.update(taskId, body, context.user.id);
+    },
+  );
+
+  app.post(
+    "/api/v1/tasks/:taskId/decompose",
+    { preHandler: protectedWrite },
+    async (request, reply) => {
+      const context = requireWriteAuthentication(request, auth);
+      const { taskId } = parse(taskIdSchema, request.params);
+      const body = parse(taskDecompositionSchema, request.body);
+      return reply
+        .code(201)
+        .send(tasks.decompose(taskId, body.steps, context.user.id));
     },
   );
 

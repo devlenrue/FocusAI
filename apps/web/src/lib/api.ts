@@ -6,7 +6,10 @@ import type {
   Plan,
   Readiness,
   Task,
+  TaskDecomposition,
+  TaskInput,
   TaskStatus,
+  TaskUpdateInput,
   UserPreferences,
 } from "./types";
 
@@ -136,6 +139,7 @@ export const api = {
     const suffix = params.size ? `?${params.toString()}` : "";
     return request<{ items: Task[] }>(`/tasks${suffix}`);
   },
+  getTask: (taskId: string) => request<Task>(`/tasks/${taskId}`),
   createTask: (input: {
     title: string;
     description?: string | null;
@@ -146,6 +150,16 @@ export const api = {
     cognitiveLoad?: Task["cognitiveLoad"];
   }) =>
     request<Task>("/tasks", { method: "POST", body: JSON.stringify(input) }),
+  updateTask: (taskId: string, input: TaskUpdateInput) =>
+    request<Task>(`/tasks/${taskId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  decomposeTask: (taskId: string, steps: TaskInput[]) =>
+    request<TaskDecomposition>(`/tasks/${taskId}/decompose`, {
+      method: "POST",
+      body: JSON.stringify({ steps }),
+    }),
   completeTask: (taskId: string, actualMinutes?: number) =>
     request<Task>(`/tasks/${taskId}/complete`, {
       method: "POST",

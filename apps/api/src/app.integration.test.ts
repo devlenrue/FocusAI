@@ -324,6 +324,246 @@ describe("FocusAI authenticated API", () => {
     ).toEqual([expect.objectContaining({ id: taskId })]);
   });
 
+  it("edits tasks and only creates reviewed breakdown steps that planners can act on", async () => {
+    const asha = await register("Asha", "asha@example.com");
+    const ren = await register("Ren", "ren@example.com");
+
+    const prerequisiteResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/tasks",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        title: "Confirm release scope",
+        priority: "medium",
+        estimateMinutes: 20,
+      },
+    });
+    expect(prerequisiteResponse.statusCode).toBe(201);
+    const prerequisite = prerequisiteResponse.json() as { id: string };
+
+    const parentResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/tasks",
+      headers: authHeaders(asha.cookies),
+      payload: { title: "Prepare release", estimateMinutes: 90 },
+    });
+    expect(parentResponse.statusCode).toBe(201);
+    const parent = parentResponse.json() as { id: string };
+
+    const editedResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/tasks/${parent.id}`,
+      headers: authHeaders(asha.cookies),
+      payload: {
+        title: "Prepare the release",
+        description: "Coordinate the final customer-facing release work.",
+        status: "in_progress",
+        priority: "critical",
+        impact: 5,
+        estimateMinutes: 90,
+        actualMinutes: 15,
+        dueAt: "2026-10-15T12:00:00.000Z",
+        cognitiveLoad: "high",
+        goalAlignment: 0.9,
+        blocked: true,
+        dependencies: [prerequisite.id],
+      },
+    });
+    expect(editedResponse.statusCode).toBe(200);
+    expect(editedResponse.json()).toMatchObject({
+      title: "Prepare the release",
+      description: "Coordinate the final customer-facing release work.",
+      status: "in_progress",
+      priority: "critical",
+      impact: 5,
+      estimateMinutes: 90,
+      actualMinutes: 15,
+      dueAt: "2026-10-15T12:00:00.000Z",
+      cognitiveLoad: "high",
+      goalAlignment: 0.9,
+      blocked: true,
+      dependencies: [prerequisite.id],
+      parentTaskId: null,
+      isDecomposed: false,
+    });
+
+    const renCannotRead = await app.inject({
+      method: "GET",
+      url: `/api/v1/tasks/${parent.id}`,
+      headers: authHeaders(ren.cookies, false),
+    });
+    expect(renCannotRead.statusCode).toBe(404);
+
+    const renCannotDecompose = await app.inject({
+      method: "POST",
+      url: `/api/v1/tasks/${parent.id}/decompose`,
+      headers: authHeaders(ren.cookies),
+      payload: { steps: [{ title: "Private step", estimateMinutes: 20 }] },
+    });
+    expect(renCannotDecompose.statusCode).toBe(404);
+
+    const confirmedBreakdown = await app.inject({
+      method: "POST",
+      url: `/api/v1/tasks/${parent.id}/decompose`,
+      headers: authHeaders(asha.cookies),
+      payload: {
+        steps: [
+          { title: "Draft release notes", estimateMinutes: 20 },
+          { title: "Review the launch checklist", estimateMinutes: 25 },
+        ],
+      },
+    });
+    expect(confirmedBreakdown.statusCode).toBe(201);
+    const breakdown = confirmedBreakdown.json() as {
+      parent: { id: string; isDecomposed: boolean; dependencies: string[] };
+      steps: Array<{
+        id: string;
+        title: string;
+        parentTaskId: string | null;
+        estimateMinutes: number;
+        priority: string;
+        blocked: boolean;
+        dependencies: string[];
+      }>;
+    };
+    expect(breakdown.parent).toMatchObject({
+      id: parent.id,
+      isDecomposed: true,
+      dependencies: [prerequisite.id],
+    });
+    expect(breakdown.steps).toEqual([
+      expect.objectContaining({
+        title: "Draft release notes",
+        parentTaskId: parent.id,
+        estimateMinutes: 20,
+        priority: "medium",
+        blocked: false,
+        dependencies: [],
+      }),
+      expect.objectContaining({
+        title: "Review the launch checklist",
+        parentTaskId: parent.id,
+        estimateMinutes: 25,
+        priority: "medium",
+        blocked: false,
+        dependencies: [],
+      }),
+    ]);
+
+    const parentCannotFocus = await app.inject({
+      method: "POST",
+      url: "/api/v1/focus-sessions",
+      headers: authHeaders(asha.cookies),
+      payload: { taskId: parent.id, plannedMinutes: 25 },
+    });
+    expect(parentCannotFocus.statusCode).toBe(409);
+
+    const parentCannotCompleteEarly = await app.inject({
+      method: "POST",
+      url: `/api/v1/tasks/${parent.id}/complete`,
+      headers: authHeaders(asha.cookies),
+      payload: {},
+    });
+    expect(parentCannotCompleteEarly.statusCode).toBe(409);
+
+    const planResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/plans/generate",
+      headers: authHeaders(asha.cookies),
+      payload: {
+        planDate: "2026-10-12",
+        readiness: "steady",
+        now: "2026-10-12T08:00:00.000Z",
+        availability: [
+          {
+            startAt: "2026-10-12T09:00:00.000Z",
+            endAt: "2026-10-12T10:30:00.000Z",
+          },
+        ],
+      },
+    });
+    expect(planResponse.statusCode).toBe(201);
+    const plannedTaskIds = (
+      planResponse.json() as { blocks: Array<{ taskId: string | null }> }
+    ).blocks.map((block) => block.taskId);
+    expect(plannedTaskIds).not.toContain(parent.id);
+    expect(plannedTaskIds).toEqual(
+      expect.arrayContaining(breakdown.steps.map((step) => step.id)),
+    );
+
+    const dashboard = await app.inject({
+      method: "GET",
+      url: "/api/v1/dashboard",
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(dashboard.statusCode).toBe(200);
+    const dashboardPayload = dashboard.json() as {
+      nextAction: { task: { id: string } } | null;
+      topPriorities: Array<{ task: { id: string } }>;
+    };
+    expect(dashboardPayload.nextAction?.task.id).not.toBe(parent.id);
+    expect(
+      dashboardPayload.topPriorities.map((item) => item.task.id),
+    ).not.toContain(parent.id);
+
+    const taskAResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/tasks",
+      headers: authHeaders(asha.cookies),
+      payload: { title: "Dependency A", estimateMinutes: 10 },
+    });
+    const taskBResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/tasks",
+      headers: authHeaders(asha.cookies),
+      payload: { title: "Dependency B", estimateMinutes: 10 },
+    });
+    const taskA = taskAResponse.json() as { id: string };
+    const taskB = taskBResponse.json() as { id: string };
+    const firstDependency = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/tasks/${taskA.id}`,
+      headers: authHeaders(asha.cookies),
+      payload: { dependencies: [taskB.id] },
+    });
+    expect(firstDependency.statusCode).toBe(200);
+    const cyclicDependency = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/tasks/${taskB.id}`,
+      headers: authHeaders(asha.cookies),
+      payload: { dependencies: [taskA.id] },
+    });
+    expect(cyclicDependency.statusCode).toBe(409);
+
+    const deleteContainer = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/tasks/${parent.id}`,
+      headers: authHeaders(asha.cookies),
+    });
+    expect(deleteContainer.statusCode).toBe(204);
+    const remainingTasks = await app.inject({
+      method: "GET",
+      url: "/api/v1/tasks",
+      headers: authHeaders(asha.cookies, false),
+    });
+    expect(remainingTasks.statusCode).toBe(200);
+    const remainingSteps = (
+      remainingTasks.json() as {
+        items: Array<{ id: string; parentTaskId: string | null }>;
+      }
+    ).items.filter((item) =>
+      breakdown.steps.some((step) => step.id === item.id),
+    );
+    expect(remainingSteps).toHaveLength(breakdown.steps.length);
+    expect(remainingSteps).toEqual(
+      expect.arrayContaining(
+        breakdown.steps.map((step) =>
+          expect.objectContaining({ id: step.id, parentTaskId: null }),
+        ),
+      ),
+    );
+  });
+
   it("uses IANA preferences and user-owned fixed commitments in plans", async () => {
     const asha = await register("Asha", "asha@example.com");
 
@@ -567,6 +807,11 @@ describe("FocusAI authenticated API", () => {
     v1.prepare(
       "INSERT INTO users(id, email, display_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
     ).run("legacy-user", "legacy@example.com", "Legacy", now, now);
+    v1.prepare(
+      `INSERT INTO tasks(id, user_id, title, status, priority, impact, estimate_minutes, actual_minutes,
+        cognitive_load, goal_alignment, blocked, created_at, updated_at)
+       VALUES (?, ?, ?, 'todo', 'medium', 3, 30, 0, 'medium', 0, 0, ?, ?)`,
+    ).run("legacy-task", "legacy-user", "Preserved task", now, now);
     v1.close();
 
     const upgraded = new FocusDatabase(migrationPath);
@@ -574,7 +819,13 @@ describe("FocusAI authenticated API", () => {
       upgraded.get<{ version: number }>(
         "SELECT MAX(version) AS version FROM schema_migrations",
       ),
-    ).toEqual({ version: 2 });
+    ).toEqual({ version: 3 });
+    expect(
+      upgraded.get<{
+        parent_task_id: string | null;
+        is_decomposed: number;
+      }>("SELECT parent_task_id, is_decomposed FROM tasks LIMIT 1"),
+    ).toEqual({ parent_task_id: null, is_decomposed: 0 });
     expect(
       upgraded.get<{ email: string; password_hash: string | null }>(
         "SELECT email, password_hash FROM users WHERE id = ?",

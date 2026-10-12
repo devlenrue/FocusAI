@@ -38,10 +38,45 @@ export interface TaskDto {
   cognitiveLoad: CognitiveLoad;
   goalAlignment: number;
   blocked: boolean;
+  /** A child task belongs to this explicit, user-confirmed breakdown parent. */
+  parentTaskId: string | null;
+  /** Breakdown parents are organizing work and are not scheduled directly. */
+  isDecomposed: boolean;
   dependencies: string[];
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+}
+
+export type TaskCreateInput = Omit<
+  TaskDto,
+  | "id"
+  | "actualMinutes"
+  | "parentTaskId"
+  | "isDecomposed"
+  | "createdAt"
+  | "updatedAt"
+  | "completedAt"
+>;
+
+export type TaskUpdateInput = Partial<
+  Omit<
+    TaskDto,
+    | "id"
+    | "actualMinutes"
+    | "parentTaskId"
+    | "isDecomposed"
+    | "createdAt"
+    | "updatedAt"
+    | "completedAt"
+  >
+> & {
+  actualMinutes?: number;
+};
+
+export interface TaskDecompositionDto {
+  parent: TaskDto;
+  steps: TaskDto[];
 }
 
 export interface FocusSessionDto {
@@ -129,6 +164,8 @@ interface TaskRow {
   cognitive_load: CognitiveLoad;
   goal_alignment: number;
   blocked: number;
+  parent_task_id: string | null;
+  is_decomposed: number;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -240,6 +277,8 @@ function rowToTask(row: TaskRow, dependencies: string[]): TaskDto {
     cognitiveLoad: row.cognitive_load,
     goalAlignment: row.goal_alignment,
     blocked: row.blocked === 1,
+    parentTaskId: row.parent_task_id,
+    isDecomposed: row.is_decomposed === 1,
     dependencies,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -514,7 +553,8 @@ export class TaskRepository {
     }
     const rows = this.database.all<TaskRow>(
       `SELECT id, title, description, status, priority, impact, estimate_minutes, actual_minutes,
-              due_at, cognitive_load, goal_alignment, blocked, created_at, updated_at, completed_at
+              due_at, cognitive_load, goal_alignment, blocked, parent_task_id, is_decomposed,
+              created_at, updated_at, completed_at
        FROM tasks WHERE ${where.join(" AND ")}
        ORDER BY CASE status WHEN 'in_progress' THEN 0 WHEN 'todo' THEN 1 WHEN 'backlog' THEN 2 ELSE 3 END,
                 due_at IS NULL, due_at ASC, updated_at DESC`,
@@ -526,7 +566,8 @@ export class TaskRepository {
   get(taskId: string, userId: string): TaskDto {
     const row = this.database.get<TaskRow>(
       `SELECT id, title, description, status, priority, impact, estimate_minutes, actual_minutes,
-              due_at, cognitive_load, goal_alignment, blocked, created_at, updated_at, completed_at
+              due_at, cognitive_load, goal_alignment, blocked, parent_task_id, is_decomposed,
+              created_at, updated_at, completed_at
        FROM tasks WHERE id = ? AND user_id = ?`,
       [taskId, userId],
     );
@@ -534,57 +575,59 @@ export class TaskRepository {
     return rowToTask(row, this.dependenciesForTask(row.id));
   }
 
-  create(
-    input: Omit<
-      TaskDto,
-      "id" | "actualMinutes" | "createdAt" | "updatedAt" | "completedAt"
-    >,
-    userId: string,
-  ): TaskDto {
-    const id = randomUUID();
-    const now = nowIso();
-    this.database.transaction(() => {
-      this.database.run(
-        `INSERT INTO tasks(
-          id, user_id, title, description, status, priority, impact, estimate_minutes, actual_minutes,
-          due_at, cognitive_load, goal_alignment, blocked, created_at, updated_at, completed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          userId,
-          input.title.trim(),
-          input.description,
-          input.status,
-          input.priority,
-          input.impact,
-          input.estimateMinutes,
-          input.dueAt,
-          input.cognitiveLoad,
-          input.goalAlignment,
-          input.blocked ? 1 : 0,
-          now,
-          now,
-          input.status === "done" ? now : null,
-        ],
-      );
-      this.replaceDependencies(id, input.dependencies, userId, now);
-    });
+  create(input: TaskCreateInput, userId: string): TaskDto {
+    const id = this.database.transaction(() =>
+      this.insertTask(input, userId, null),
+    );
     return this.get(id, userId);
   }
 
-  update(
+  /**
+   * Creates reviewed child work in one transaction and turns the parent into a
+   * non-plannable container. No task is generated without this explicit call.
+   */
+  decompose(
     taskId: string,
-    input: Partial<
-      Omit<
-        TaskDto,
-        "id" | "actualMinutes" | "createdAt" | "updatedAt" | "completedAt"
-      >
-    > & {
-      actualMinutes?: number;
-    },
+    steps: TaskCreateInput[],
     userId: string,
-  ): TaskDto {
-    this.get(taskId, userId);
+  ): TaskDecompositionDto {
+    return this.database.transaction(() => {
+      const parent = this.get(taskId, userId);
+      if (parent.status === "done") {
+        throw new ConflictError(
+          "Completed tasks cannot be broken into new steps.",
+        );
+      }
+      if (parent.isDecomposed) {
+        throw new ConflictError(
+          "This task has already been broken into steps.",
+        );
+      }
+      this.assertHasNoDependents(taskId, userId);
+
+      const stepIds = steps.map((step) => {
+        if (step.dependencies.includes(taskId)) {
+          throw new ConflictError(
+            "A step cannot depend on its breakdown parent. Choose an actionable dependency instead.",
+          );
+        }
+        return this.insertTask(step, userId, taskId);
+      });
+      this.database.run(
+        "UPDATE tasks SET is_decomposed = 1, updated_at = ? WHERE id = ? AND user_id = ?",
+        [nowIso(), taskId, userId],
+      );
+      return {
+        parent: this.get(taskId, userId),
+        steps: stepIds.map((stepId) => this.get(stepId, userId)),
+      };
+    });
+  }
+
+  update(taskId: string, input: TaskUpdateInput, userId: string): TaskDto {
+    const current = this.get(taskId, userId);
+    if (input.status === "done")
+      this.assertContainerCanComplete(current, userId);
     const fields: string[] = [];
     const values: Array<string | number | null> = [];
     const mapping: Array<
@@ -647,6 +690,7 @@ export class TaskRepository {
     userId: string,
   ): TaskDto {
     const task = this.get(taskId, userId);
+    this.assertContainerCanComplete(task, userId);
     const now = nowIso();
     this.database.run(
       `UPDATE tasks
@@ -665,6 +709,72 @@ export class TaskRepository {
     ]);
   }
 
+  private assertContainerCanComplete(task: TaskDto, userId: string): void {
+    if (!task.isDecomposed) return;
+    const unfinishedChild = this.database.get<{ title: string }>(
+      `SELECT title FROM tasks
+       WHERE user_id = ? AND parent_task_id = ? AND status <> 'done'
+       LIMIT 1`,
+      [userId, task.id],
+    );
+    if (unfinishedChild) {
+      throw new ConflictError(
+        `Finish or remove “${unfinishedChild.title}” before completing this breakdown task.`,
+      );
+    }
+  }
+
+  private insertTask(
+    input: TaskCreateInput,
+    userId: string,
+    parentTaskId: string | null,
+  ): string {
+    const id = randomUUID();
+    const now = nowIso();
+    this.database.run(
+      `INSERT INTO tasks(
+        id, user_id, title, description, status, priority, impact, estimate_minutes, actual_minutes,
+        due_at, cognitive_load, goal_alignment, blocked, parent_task_id, created_at, updated_at, completed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        userId,
+        input.title.trim(),
+        input.description,
+        input.status,
+        input.priority,
+        input.impact,
+        input.estimateMinutes,
+        input.dueAt,
+        input.cognitiveLoad,
+        input.goalAlignment,
+        input.blocked ? 1 : 0,
+        parentTaskId,
+        now,
+        now,
+        input.status === "done" ? now : null,
+      ],
+    );
+    this.replaceDependencies(id, input.dependencies, userId, now);
+    return id;
+  }
+
+  private assertHasNoDependents(taskId: string, userId: string): void {
+    const dependent = this.database.get<{ title: string }>(
+      `SELECT t.title
+       FROM task_dependencies dependency
+       INNER JOIN tasks t ON t.id = dependency.task_id
+       WHERE dependency.depends_on_task_id = ? AND t.user_id = ?
+       LIMIT 1`,
+      [taskId, userId],
+    );
+    if (dependent) {
+      throw new ConflictError(
+        `Update dependencies before breaking this task into steps; “${dependent.title}” currently depends on it.`,
+      );
+    }
+  }
+
   private dependenciesForTask(taskId: string): string[] {
     return this.database
       .all<{ depends_on_task_id: string }>(
@@ -680,12 +790,19 @@ export class TaskRepository {
     userId: string,
     createdAt: string,
   ): void {
-    const uniqueDependencyIds = [...new Set(dependencyIds)].filter(
-      (dependencyId) => dependencyId !== taskId,
-    );
-    for (const dependencyId of uniqueDependencyIds) {
-      this.get(dependencyId, userId);
+    const uniqueDependencyIds = [...new Set(dependencyIds)];
+    if (uniqueDependencyIds.includes(taskId)) {
+      throw new ConflictError("A task cannot depend on itself.");
     }
+    for (const dependencyId of uniqueDependencyIds) {
+      const dependency = this.get(dependencyId, userId);
+      if (dependency.isDecomposed) {
+        throw new ConflictError(
+          "A dependency must be actionable; choose one of that task’s steps instead.",
+        );
+      }
+    }
+    this.assertDependenciesDoNotCycle(taskId, uniqueDependencyIds, userId);
     this.database.run("DELETE FROM task_dependencies WHERE task_id = ?", [
       taskId,
     ]);
@@ -694,6 +811,46 @@ export class TaskRepository {
         "INSERT INTO task_dependencies(task_id, depends_on_task_id, created_at) VALUES (?, ?, ?)",
         [taskId, dependencyId, createdAt],
       );
+    }
+  }
+
+  private assertDependenciesDoNotCycle(
+    taskId: string,
+    dependencyIds: string[],
+    userId: string,
+  ): void {
+    const graph = new Map<string, string[]>();
+    for (const row of this.database.all<{
+      task_id: string;
+      depends_on_task_id: string;
+    }>(
+      `SELECT dependency.task_id, dependency.depends_on_task_id
+       FROM task_dependencies dependency
+       INNER JOIN tasks task ON task.id = dependency.task_id
+       WHERE task.user_id = ? AND dependency.task_id <> ?`,
+      [userId, taskId],
+    )) {
+      const dependencies = graph.get(row.task_id) ?? [];
+      dependencies.push(row.depends_on_task_id);
+      graph.set(row.task_id, dependencies);
+    }
+    graph.set(taskId, dependencyIds);
+
+    const reachesTask = (currentId: string, visited: Set<string>): boolean => {
+      if (currentId === taskId) return true;
+      if (visited.has(currentId)) return false;
+      visited.add(currentId);
+      return (graph.get(currentId) ?? []).some((dependencyId) =>
+        reachesTask(dependencyId, visited),
+      );
+    };
+
+    if (
+      dependencyIds.some((dependencyId) =>
+        reachesTask(dependencyId, new Set<string>()),
+      )
+    ) {
+      throw new ConflictError("Task dependencies cannot contain a cycle.");
     }
   }
 }
@@ -736,7 +893,14 @@ export class FocusSessionRepository {
     },
     userId: string,
   ): FocusSessionDto {
-    if (input.taskId) this.tasks.get(input.taskId, userId);
+    if (input.taskId) {
+      const task = this.tasks.get(input.taskId, userId);
+      if (task.isDecomposed) {
+        throw new ConflictError(
+          "Start focus on one of this task’s actionable steps instead.",
+        );
+      }
+    }
     const now = nowIso();
     const id = randomUUID();
     this.database.transaction(() => {
@@ -865,7 +1029,10 @@ export class PlanRepository {
         ? this.remainingAvailability(input.planDate, preference, input.now)
         : this.defaultAvailability(input.planDate, preference);
     const commitments = this.commitmentsFor(availability, userId);
-    const tasks = this.tasks.list(userId).map(asPlanningTask);
+    const tasks = this.tasks
+      .list(userId)
+      .filter((task) => !task.isDecomposed)
+      .map(asPlanningTask);
     const options = {
       tasks,
       availability,
@@ -1118,7 +1285,8 @@ export class DashboardService {
     const preferences = this.preferences.get(userId);
     const allTasks = this.tasks.list(userId);
     const active = allTasks.filter((task) => task.status !== "done");
-    const ranked = rankTasks(active.map(asPlanningTask), {
+    const actionable = active.filter((task) => !task.isDecomposed);
+    const ranked = rankTasks(actionable.map(asPlanningTask), {
       availableMinutes: 8 * 60,
       now: nowIso(),
       readiness: "steady",

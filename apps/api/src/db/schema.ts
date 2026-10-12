@@ -5,9 +5,10 @@ export interface SchemaMigration {
 
 /**
  * Migrations are intentionally additive. New workspaces apply each version in
- * order; existing v1 local workspaces receive only the v2 auth migration.
+ * order; existing local workspaces receive only the versions they do not yet
+ * have, preserving prior task, plan, and focus history.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const schemaV1Sql = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -150,7 +151,14 @@ CREATE TABLE IF NOT EXISTS auth_audit_events (
 CREATE INDEX IF NOT EXISTS idx_auth_audit_events_user_time ON auth_audit_events(user_id, created_at DESC);
 `;
 
+const schemaV3Sql = `
+ALTER TABLE tasks ADD COLUMN parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL;
+ALTER TABLE tasks ADD COLUMN is_decomposed INTEGER NOT NULL DEFAULT 0 CHECK (is_decomposed IN (0, 1));
+CREATE INDEX IF NOT EXISTS idx_tasks_user_parent ON tasks(user_id, parent_task_id, updated_at DESC);
+`;
+
 export const migrations: readonly SchemaMigration[] = [
   { version: 1, sql: schemaV1Sql },
   { version: 2, sql: schemaV2Sql },
+  { version: 3, sql: schemaV3Sql },
 ];

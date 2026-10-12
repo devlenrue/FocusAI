@@ -8,6 +8,7 @@ import {
   Clock,
   Filter,
   Focus,
+  Pencil,
   Search,
   Trash2,
   X,
@@ -16,6 +17,7 @@ import { api } from "@/lib/api";
 import { formatDuration } from "@/lib/format";
 import type { Task } from "@/lib/types";
 import { NewTaskModal } from "@/components/NewTaskModal";
+import { TaskEditorModal } from "@/components/TaskEditorModal";
 import { EmptyState, ErrorState, LoadingState } from "@/components/States";
 import {
   PriorityPill,
@@ -31,19 +33,25 @@ function TaskItem({
   task,
   onComplete,
   onDelete,
+  onEdit,
   isCompleting,
   isDeleting,
 }: {
   task: Task;
   onComplete: (task: Task) => void;
   onDelete: (task: Task) => void;
+  onEdit: (task: Task) => void;
   isCompleting: boolean;
   isDeleting: boolean;
 }) {
   const navigate = useNavigate();
   const isDone = task.status === "done";
   return (
-    <article className={`task-row ${isDone ? "task-row-done" : ""}`}>
+    <article
+      className={`task-row ${isDone ? "task-row-done" : ""} ${
+        task.isDecomposed ? "task-row-container" : ""
+      }`}
+    >
       <button
         className={`complete-toggle ${isDone ? "completed" : ""}`}
         type="button"
@@ -59,6 +67,12 @@ function TaskItem({
         <div className="task-row-heading">
           <TaskStatusDot status={task.status} />
           <h3>{task.title}</h3>
+          {task.isDecomposed && (
+            <span className="task-relationship-pill">Breakdown</span>
+          )}
+          {task.parentTaskId && !task.isDecomposed && (
+            <span className="task-relationship-pill step">Step</span>
+          )}
           <PriorityPill priority={task.priority} />
         </div>
         {task.description && (
@@ -67,7 +81,7 @@ function TaskItem({
         <TaskMeta task={task} />
       </div>
       <div className="task-row-actions">
-        {!isDone && (
+        {!isDone && !task.isDecomposed && (
           <button
             className="icon-button icon-button-labeled"
             type="button"
@@ -78,6 +92,15 @@ function TaskItem({
             <span>Focus</span>
           </button>
         )}
+        <button
+          className="icon-button"
+          type="button"
+          onClick={() => onEdit(task)}
+          aria-label={`Edit ${task.title}`}
+          disabled={isDeleting}
+        >
+          <Pencil size={16} />
+        </button>
         <button
           className="icon-button destructive-button"
           type="button"
@@ -98,6 +121,7 @@ export function TasksPage() {
   const [search, setSearch] = useState("");
   const [view, setView] = useState<ViewFilter>("all");
   const [isCaptureOpen, setCaptureOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const tasksQuery = useQuery({
@@ -289,7 +313,9 @@ export function TasksPage() {
               <Clock size={15} />{" "}
               {formatDuration(
                 visibleTasks
-                  .filter((task) => task.status !== "done")
+                  .filter(
+                    (task) => task.status !== "done" && !task.isDecomposed,
+                  )
                   .reduce((total, task) => total + task.estimateMinutes, 0),
               )}{" "}
               remaining
@@ -302,6 +328,7 @@ export function TasksPage() {
                 task={task}
                 onComplete={complete}
                 onDelete={remove}
+                onEdit={setEditingTask}
                 isCompleting={
                   completeTask.isPending &&
                   completeTask.variables?.taskId === task.id
@@ -326,6 +353,12 @@ export function TasksPage() {
       <NewTaskModal
         open={isCaptureOpen}
         onClose={() => setCaptureOpen(false)}
+      />
+      <TaskEditorModal
+        open={Boolean(editingTask)}
+        task={editingTask}
+        tasks={allTasks}
+        onClose={() => setEditingTask(null)}
       />
     </div>
   );

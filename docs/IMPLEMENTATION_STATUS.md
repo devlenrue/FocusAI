@@ -62,7 +62,7 @@ Environment verified during audit: Node `v22.22.3`, npm `10.9.8`.
 | Password hashing/session rotation/revocation | **Tested**      | Memory-hard scrypt, HTTP-only opaque cookies, rotation and revoke-other-session routes              |
 | Server authorization/ownership enforcement   | **Tested**      | Protected routes pass verified server user IDs to repositories; cross-user access tests return 404  |
 | CSRF/rate limiting/auth audit log            | **Tested**      | Session-bound double-submit CSRF, stricter auth rate limits, and minimal non-sensitive audit events |
-| Additive database migrations                 | **Tested**      | Version 1 → 2 preservation is covered; local SQLite remains intentionally limited                   |
+| Additive database migrations                 | **Tested**      | Version 1 → 3 preservation is covered; local SQLite remains intentionally limited                   |
 | Production relational adapter                | **Not Started** | No hosted production database is configured or claimed                                              |
 | Preference settings UI / IANA timezone       | **Tested**      | Authenticated Schedule & Capacity UI validates IANA zones and uses them for plan-day boundaries     |
 
@@ -70,16 +70,16 @@ Environment verified during audit: Node `v22.22.3`, npm `10.9.8`.
 
 **Objective:** Replace the single implicit local identity with real account/session flows and make all workspace access server-authorized before expanding shared product data.
 
-| Area                      | Delivered behavior                                                                                            | Status     |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------- |
-| Registration/sign-in gate | Functional Create account / Sign in screen; no demo account or bypass route                                   | **Tested** |
-| Password security         | 12+ character policy, unique salted memory-hard scrypt hash, constant-time compare, no password logging       | **Tested** |
-| Session model             | Random opaque HTTP-only session cookie; only SHA-256 token hash persisted                                     | **Tested** |
-| CSRF                      | Session-bound readable CSRF cookie plus required `X-CSRF-Token` on every unsafe workspace mutation            | **Tested** |
-| Logout/revocation         | Current-session sign-out, session rotation, and revoke-other-session endpoint                                 | **Tested** |
-| Ownership                 | Every task/plan/focus/dashboard query requires authenticated user context; no default repository user remains | **Tested** |
-| Migration safety          | Version 2 additive migration; a v1 database upgrade and legacy local workspace claim are integration-tested   | **Tested** |
-| Rate limits/auditability  | Tighter registration/sign-in limits and minimal sensitive-data-free authentication audit events               | **Tested** |
+| Area                      | Delivered behavior                                                                                             | Status     |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------- |
+| Registration/sign-in gate | Functional Create account / Sign in screen; no demo account or bypass route                                    | **Tested** |
+| Password security         | 12+ character policy, unique salted memory-hard scrypt hash, constant-time compare, no password logging        | **Tested** |
+| Session model             | Random opaque HTTP-only session cookie; only SHA-256 token hash persisted                                      | **Tested** |
+| CSRF                      | Session-bound readable CSRF cookie plus required `X-CSRF-Token` on every unsafe workspace mutation             | **Tested** |
+| Logout/revocation         | Current-session sign-out, session rotation, and revoke-other-session endpoint                                  | **Tested** |
+| Ownership                 | Every task/plan/focus/dashboard query requires authenticated user context; no default repository user remains  | **Tested** |
+| Migration safety          | Version 2/3 additive migrations; a v1 database upgrade and legacy local workspace claim are integration-tested | **Tested** |
+| Rate limits/auditability  | Tighter registration/sign-in limits and minimal sensitive-data-free authentication audit events                | **Tested** |
 
 See [`AUTHENTICATION.md`](AUTHENTICATION.md) for exact cookie, CSRF, password, and legacy-data behavior.
 
@@ -98,16 +98,30 @@ See [`AUTHENTICATION.md`](AUTHENTICATION.md) for exact cookie, CSRF, password, a
 
 This is manual local calendar data, not a connected provider, recurring-event system, or conflict-resolution UI.
 
+### Increment 3 delivery — richer task editing and user-confirmed decomposition
+
+**Objective:** Make task details and prerequisite relationships deliberately editable, then support a human-reviewed task breakdown without automatically inventing work or double-booking a parent alongside its steps.
+
+| Area                  | Delivered behavior                                                                                                                                                                                           | Status          |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------- |
+| Full task editor      | The Task Workspace retains quick capture and adds an editor for title, context, status, priority, impact, estimate/actual time, due instant, cognitive load, goal alignment, blocked state, and dependencies | **Tested**      |
+| Owned dependencies    | API/UI dependency updates are ownership-enforced; self-links, cycles, and container prerequisites return safe conflicts                                                                                      | **Tested**      |
+| Confirmed breakdown   | A user adds/reviews step titles and estimates locally, then explicitly confirms one transaction that creates child records and marks the parent as a container                                               | **Tested**      |
+| Planner-safe behavior | Containers are excluded from new plan drafts and new dashboard rankings; focus starts reject containers, while ordinary child steps remain editable/actionable                                               | **Tested**      |
+| Data preservation     | Schema version 3 adds nullable parent references and a container flag without resetting existing records; deleting a container releases rather than deletes retained steps                                   | **Tested**      |
+| Non-goals             | Automatic/AI decomposition, recurrence, tags, projects/goals, and browser E2E/accessibility certification remain outside this increment                                                                      | **Not Started** |
+
 ### Increment 3 — connected productivity records
 
-| Feature                               | Status          | Notes                                                                                   |
-| ------------------------------------- | --------------- | --------------------------------------------------------------------------------------- |
-| Projects/goals/milestones             | **Not Started** | `goal_alignment` exists as an engine input only                                         |
-| Notes and conversion to task          | **Not Started** | No placeholder route                                                                    |
-| Habit tracking                        | **Not Started** | No placeholder route                                                                    |
-| Calendar event CRUD/views             | **Tested**      | Owned API/UI CRUD, local-zone display, and fixed/flexible capacity behavior are covered |
-| Task editing/subtasks/recurrence/tags | **In Progress** | Basic lifecycle works; richer model/workflows are pending                               |
-| Analytics                             | **Not Started** | No fabricated charts                                                                    |
+| Feature                                  | Status          | Notes                                                                                                                                     |
+| ---------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Projects/goals/milestones                | **Not Started** | `goal_alignment` exists as an engine input only                                                                                           |
+| Notes and conversion to task             | **Not Started** | No placeholder route                                                                                                                      |
+| Habit tracking                           | **Not Started** | No placeholder route                                                                                                                      |
+| Calendar event CRUD/views                | **Tested**      | Owned API/UI CRUD, local-zone display, and fixed/flexible capacity behavior are covered                                                   |
+| Task editing and confirmed decomposition | **Tested**      | Full owned-task editing/dependencies plus explicit reviewed step creation; breakdown parents are excluded from future planning candidates |
+| Task recurrence and tags                 | **Not Started** | Neither recurrence rules nor tag records/UI are implemented                                                                               |
+| Analytics                                | **Not Started** | No fabricated charts                                                                                                                      |
 
 ### Increment 4 — adaptive/hybrid intelligence
 
@@ -148,40 +162,44 @@ This is manual local calendar data, not a connected provider, recurring-event sy
 
 - Schema version **1** in `apps/api/src/db/schema.ts`, tracked in `schema_migrations`.
 - Schema version **2** adds user credential metadata, `auth_sessions`, normalized email uniqueness, and `auth_audit_events` additively.
+- Schema version **3** adds nullable `tasks.parent_task_id`, constrained `tasks.is_decomposed`, and an owned parent lookup index for user-confirmed breakdowns.
 - No destructive reset was used. The normal local database is ignored by Git. Tests use temporary throwaway databases.
 
 ## Verification log
 
-| Date       | Command / check                                                             | Actual result                                                                                                                                                             |
-| ---------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-10-12 | `git status --short --branch`, `git log --oneline -8`, repository inventory | Passed — clean one-commit baseline with only README                                                                                                                       |
-| 2026-10-12 | `node --version && npm --version`                                           | Passed — Node `v22.22.3`, npm `10.9.8`                                                                                                                                    |
-| 2026-10-12 | `npm ci`                                                                    | Passed — clean lockfile install, 0 audit vulnerabilities reported                                                                                                         |
-| 2026-10-12 | Baseline `npm run test` before Increment 2                                  | Passed — 2 API integration tests + 4 decision-engine unit tests                                                                                                           |
-| 2026-10-12 | `npm run typecheck`                                                         | Passed — API, web, and decision-engine TypeScript checks                                                                                                                  |
-| 2026-10-12 | `npm run lint`                                                              | Passed — zero warnings allowed                                                                                                                                            |
-| 2026-10-12 | `npm run test`                                                              | Passed — 5 authenticated API integration tests + 4 decision-engine unit tests                                                                                             |
-| 2026-10-12 | `npm run build`                                                             | Passed — decision-engine/API compilation and Vite production build                                                                                                        |
-| 2026-10-12 | `npm run format:check`                                                      | Passed — all matched files use Prettier style                                                                                                                             |
-| 2026-10-12 | `npm audit --audit-level=moderate`                                          | Passed — 0 vulnerabilities in installed lockfile                                                                                                                          |
-| 2026-10-12 | Existing local SQLite migration inspection                                  | Passed — schema migrations 1 and 2 present; user credential columns added without deleting existing local data                                                            |
-| 2026-10-12 | Isolated real-HTTP auth smoke                                               | Passed — register 201, HTTP-only cookie, CSRF rejection 403, protected task creation 201, logout 204, revoked-session dashboard 401; temporary database removed afterward |
-| 2026-10-12 | Vite preview/proxy smoke                                                    | Passed — preview root 200 and relative proxied unauthenticated dashboard 401                                                                                              |
-| 2026-10-12 | Clean-artifact typecheck/test simulation                                    | Passed — removed generated decision-engine artifacts; API typecheck resolved source and API pretest rebuilt runtime artifacts                                             |
-| 2026-10-12 | Schedule increment command suite                                            | Passed — typecheck, lint, 6 authenticated API integration tests + 4 engine tests, build, format check, and moderate audit                                                 |
-| 2026-10-12 | Isolated real-HTTP schedule smoke                                           | Passed — preference 200, event 201, fixed capacity 120, flexible capacity 180, preserved UTC instant after zone change, DST gap 409; temporary database removed           |
-| 2026-10-12 | Schedule preview/proxy smoke                                                | Passed — `/schedule` served 200; direct and relative-proxy unauthenticated preferences returned 401                                                                       |
-| 2026-10-12 | GitHub Actions run `38235014038`                                            | Passed — clean `npm ci`, lint, typecheck, tests, build, and moderate audit on the pull request branch                                                                     |
+| Date       | Command / check                                                             | Actual result                                                                                                                                                                         |
+| ---------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-10-12 | `git status --short --branch`, `git log --oneline -8`, repository inventory | Passed — clean one-commit baseline with only README                                                                                                                                   |
+| 2026-10-12 | `node --version && npm --version`                                           | Passed — Node `v22.22.3`, npm `10.9.8`                                                                                                                                                |
+| 2026-10-12 | `npm ci`                                                                    | Passed — clean lockfile install, 0 audit vulnerabilities reported                                                                                                                     |
+| 2026-10-12 | Baseline `npm run test` before Increment 2                                  | Passed — 2 API integration tests + 4 decision-engine unit tests                                                                                                                       |
+| 2026-10-12 | `npm run typecheck`                                                         | Passed — API, web, and decision-engine TypeScript checks                                                                                                                              |
+| 2026-10-12 | `npm run lint`                                                              | Passed — zero warnings allowed                                                                                                                                                        |
+| 2026-10-12 | `npm run test`                                                              | Passed — 5 authenticated API integration tests + 4 decision-engine unit tests                                                                                                         |
+| 2026-10-12 | `npm run build`                                                             | Passed — decision-engine/API compilation and Vite production build                                                                                                                    |
+| 2026-10-12 | `npm run format:check`                                                      | Passed — all matched files use Prettier style                                                                                                                                         |
+| 2026-10-12 | `npm audit --audit-level=moderate`                                          | Passed — 0 vulnerabilities in installed lockfile                                                                                                                                      |
+| 2026-10-12 | Existing local SQLite migration inspection                                  | Passed — schema migrations 1 and 2 present; user credential columns added without deleting existing local data                                                                        |
+| 2026-10-12 | Isolated real-HTTP auth smoke                                               | Passed — register 201, HTTP-only cookie, CSRF rejection 403, protected task creation 201, logout 204, revoked-session dashboard 401; temporary database removed afterward             |
+| 2026-10-12 | Vite preview/proxy smoke                                                    | Passed — preview root 200 and relative proxied unauthenticated dashboard 401                                                                                                          |
+| 2026-10-12 | Clean-artifact typecheck/test simulation                                    | Passed — removed generated decision-engine artifacts; API typecheck resolved source and API pretest rebuilt runtime artifacts                                                         |
+| 2026-10-12 | Schedule increment command suite                                            | Passed — typecheck, lint, 6 authenticated API integration tests + 4 engine tests, build, format check, and moderate audit                                                             |
+| 2026-10-12 | Isolated real-HTTP schedule smoke                                           | Passed — preference 200, event 201, fixed capacity 120, flexible capacity 180, preserved UTC instant after zone change, DST gap 409; temporary database removed                       |
+| 2026-10-12 | Schedule preview/proxy smoke                                                | Passed — `/schedule` served 200; direct and relative-proxy unauthenticated preferences returned 401                                                                                   |
+| 2026-10-12 | GitHub Actions run `38235014038`                                            | Passed — clean `npm ci`, lint, typecheck, tests, build, and moderate audit on the pull request branch                                                                                 |
+| 2026-10-12 | Task editing/decomposition command suite                                    | Passed — zero-warning lint; API/web/engine typecheck; 7 authenticated API integration tests + 4 engine tests; production build; Prettier check; moderate audit with 0 vulnerabilities |
+| 2026-10-12 | Isolated real-HTTP task-edit/decomposition smoke                            | Passed — authenticated full-field edit, explicit 2-step confirmation, parent focus rejection, planner parent exclusion/step scheduling, and child release after container deletion    |
+| 2026-10-12 | Local additive V3 migration and preview/proxy smoke                         | Passed — normal local database advanced to version 3 with new task columns (no records existed to rewrite); API health 200; Vite `/tasks` 200 and relative protected API proxy 401    |
 
 ## Risks, limitations, and next highest-priority action
 
-| Item                                   | Risk / limitation                                                                         | Next action                                                             |
-| -------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Local development deployment           | Auth/ownership is implemented, but the SQLite adapter is not a hosted production database | Add supported production database and deployment security configuration |
-| Experimental `node:sqlite`             | Not an appropriate unqualified production datastore claim                                 | Add supported production relational adapter and migration tooling       |
-| DST ambiguity / nonexistent local time | The API intentionally rejects a time it cannot resolve without guessing                   | Add browser E2E coverage and a user-facing disambiguation design        |
-| Manual local calendar only             | No external provider authorization, sync, recurrence, or conflict guidance exists         | Design explicit calendar connection and recurrence workflows            |
-| Whole-task schedule                    | Long work cannot yet be split automatically                                               | Add user-confirmed decomposition/subtasks and feasibility UI            |
-| No mobile/offline                      | Cross-device/offline acceptance criteria are unverified                                   | Stabilize auth/API contracts, then add Expo client and sync design      |
+| Item                                   | Risk / limitation                                                                                                               | Next action                                                                            |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Local development deployment           | Auth/ownership is implemented, but the SQLite adapter is not a hosted production database                                       | Add supported production database and deployment security configuration                |
+| Experimental `node:sqlite`             | Not an appropriate unqualified production datastore claim                                                                       | Add supported production relational adapter and migration tooling                      |
+| DST ambiguity / nonexistent local time | The API intentionally rejects a time it cannot resolve without guessing                                                         | Add browser E2E coverage and a user-facing disambiguation design                       |
+| Manual local calendar only             | No external provider authorization, sync, recurrence, or conflict guidance exists                                               | Design explicit calendar connection and recurrence workflows                           |
+| Confirmed one-level breakdown          | Steps are explicitly user-authored and safe for new drafts, but nested hierarchy, recurrence, and tags are intentionally absent | Evaluate user-controlled plan block editing/reordering before expanding task hierarchy |
+| No mobile/offline                      | Cross-device/offline acceptance criteria are unverified                                                                         | Stabilize auth/API contracts, then add Expo client and sync design                     |
 
-**Next highest-priority action: richer task editing and user-confirmed decomposition.** Availability and explicit commitments are now real inputs; long or multi-step work still needs an honest, editable breakdown instead of hidden overbooking.
+**Next highest-priority action: user-controlled plan block editing and reordering.** Availability, commitments, and explicit task steps now produce honest drafts; the next planning-control slice should let users deliberately adjust a draft without fabricating feasibility or rewriting accepted history.

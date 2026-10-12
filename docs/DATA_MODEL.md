@@ -11,6 +11,7 @@ users 1 ─── 1 user_preferences
   ├── * auth_audit_events
   ├── * tasks ─── * task_dependencies (task → prerequisite task)
   │       │
+  │       ├── 0..1 parent task (confirmed breakdown step → container)
   │       └── * scheduled_blocks
   │
   ├── * calendar_events
@@ -29,7 +30,7 @@ All current tables use text UUID primary keys except the migration ledger. Every
 | `version`    | integer      | Primary key |
 | `applied_at` | UTC ISO text | Required    |
 
-The migration ledger is created before the rest of the schema is inspected. Current schema version: **2**. Version 2 adds authentication/session tables and user columns without a destructive reset.
+The migration ledger is created before the rest of the schema is inspected. Current schema version: **3**. Version 2 adds authentication/session tables and user columns; version 3 adds task breakdown metadata and its ownership-oriented index. Both are additive and do not reset existing local records.
 
 ### `users`
 
@@ -80,22 +81,24 @@ One row per user, foreign-keyed to `users` with cascade deletion.
 
 ### `tasks`
 
-| Column                                | Notes                                                |
-| ------------------------------------- | ---------------------------------------------------- |
-| `id`, `user_id`                       | UUID and ownership foreign key                       |
-| `title`, `description`                | Title is constrained to nonblank, max 200 characters |
-| `status`                              | `backlog`, `todo`, `in_progress`, `done`             |
-| `priority`                            | `low`, `medium`, `high`, `critical`                  |
-| `impact`                              | Integer 1–5                                          |
-| `estimate_minutes`                    | 1–720                                                |
-| `actual_minutes`                      | Non-negative accumulated effort field                |
-| `due_at`                              | Nullable UTC ISO timestamp                           |
-| `cognitive_load`                      | `low`, `medium`, `high`                              |
-| `goal_alignment`                      | Numeric 0–1; no goal CRUD exists yet                 |
-| `blocked`                             | Boolean represented by constrained integer           |
-| creation/update/completion timestamps | UTC ISO timestamps; completion is nullable           |
+| Column                                | Notes                                                                                                               |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `id`, `user_id`                       | UUID and ownership foreign key                                                                                      |
+| `title`, `description`                | Title is constrained to nonblank, max 200 characters                                                                |
+| `status`                              | `backlog`, `todo`, `in_progress`, `done`                                                                            |
+| `priority`                            | `low`, `medium`, `high`, `critical`                                                                                 |
+| `impact`                              | Integer 1–5                                                                                                         |
+| `estimate_minutes`                    | 1–720                                                                                                               |
+| `actual_minutes`                      | Non-negative accumulated effort field                                                                               |
+| `due_at`                              | Nullable UTC ISO timestamp                                                                                          |
+| `cognitive_load`                      | `low`, `medium`, `high`                                                                                             |
+| `goal_alignment`                      | Numeric 0–1; no goal CRUD exists yet                                                                                |
+| `blocked`                             | Boolean represented by constrained integer                                                                          |
+| `parent_task_id`                      | Nullable self-reference; a confirmed step references its container; deleting that container sets this value to null |
+| `is_decomposed`                       | Constrained boolean for an explicit breakdown container; defaults false so existing tasks remain actionable         |
+| creation/update/completion timestamps | UTC ISO timestamps; completion is nullable                                                                          |
 
-Indexes currently support a user's status/update ordering and due-date lookups.
+A decomposition is an explicit, transactional API action: reviewed child records are created first and the owned parent is marked as a container in the same transaction. The public general task update route cannot set either relationship field. Containers stay visible for history/context but are excluded from new planning candidates and focus starts; child records are ordinary independently editable tasks. Parent completion is rejected while any retained child is unfinished. Indexes support a user's status/update ordering, due-date lookups, and parent/child lookup.
 
 ### `task_dependencies`
 
@@ -107,7 +110,7 @@ A normalized self-join table.
 | `depends_on_task_id` | Required prerequisite FK, cascade deletion |
 | `created_at`         | UTC ISO timestamp                          |
 
-The pair is unique and a task cannot directly depend on itself. Cycle detection is handled during planning as a deferred dependency outcome; an editor that prevents cycles is pending.
+The pair is unique and a task cannot directly depend on itself. Task create/update and confirmed-breakdown writes verify the referenced task belongs to the same user, reject non-actionable breakdown containers as prerequisites, and reject dependency cycles before any edge is replaced. The planner still reports ordinary unmet dependency sequencing as a deferred outcome.
 
 ### `calendar_events`
 
@@ -159,12 +162,12 @@ The decision engine prevents generated overlap. The database does not currently 
 | `note`                                           | Optional intentional focus note               |
 | audit timestamps                                 | UTC ISO timestamps                            |
 
-The API prevents starting a second active/paused session for each authenticated user via a transaction-level service check. A database partial uniqueness constraint should accompany the production multi-user adapter.
+The API prevents starting a second active/paused session for each authenticated user via a transaction-level service check and rejects a breakdown container as a focus target; a person should select one of its actionable steps. A database partial uniqueness constraint should accompany the production multi-user adapter.
 
 ## Deletion behavior
 
 - Deleting a user cascades to their preferences, tasks, events, plans, and sessions; audit events retain a null user reference.
-- Deleting a task cascades its dependency rows; scheduled blocks and focus sessions preserve their historical record with `task_id = NULL` where configured.
+- Deleting a task cascades its dependency rows; scheduled blocks and focus sessions preserve their historical record with `task_id = NULL` where configured. Deleting a breakdown container sets each retained child’s `parent_task_id` to `NULL`, releasing those records as standalone actionable tasks rather than deleting user-authored work.
 - Deleting a plan cascades its scheduled blocks.
 
 Formal account-deletion, export, retention, and restore workflows are not yet implemented.

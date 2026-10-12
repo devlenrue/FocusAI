@@ -84,6 +84,12 @@ See [`AUTHENTICATION.md`](AUTHENTICATION.md) for the exact current protocol, pas
 
 Calendar event CRUD is server-owned like every other workspace record. `is_fixed = true` commitments are passed into the deterministic engine and subtracted from generated **future drafts**. Flexible events remain visible in the schedule but do not consume planning capacity. Existing event instants are preserved when a user changes display time zone; their wall-clock rendering and future workday calculation change deliberately. Approved plans and historical records are not rewritten.
 
+## Task editing and confirmed breakdown boundary
+
+The Task Workspace keeps rapid capture separate from richer editing. An editor can update every supported task field and owned prerequisite list. Repository writes validate ownership for every referenced dependency and reject self-dependencies, dependency cycles, and breakdown containers as prerequisites.
+
+A breakdown is intentionally **not** automatic or AI-generated. The client holds locally reviewed step drafts until the user presses the explicit confirmation control. `POST /tasks/:taskId/decompose` then runs one owned transaction: it creates the supplied child tasks and marks the parent `is_decomposed = true`. The parent remains in task history/context, while both `PlanRepository` and dashboard ranking remove it from new planning candidates. Focus starts reject the container. This avoids booking an aggregate task alongside the actual steps without rewriting historical accepted plans or blocks. Child steps are normal tasks: users can edit their fields/dependencies after creation. Deleting a container preserves those child records by setting their parent reference to null.
+
 ## API conventions
 
 - Version prefix: `/api/v1`.
@@ -111,7 +117,7 @@ When a session pauses or ends, the server calculates the elapsed interval from `
 The web app starts at a real registration/sign-in gate, then intentionally exposes only five implemented workspace navigation surfaces:
 
 1. **Command center** — real task counts, persisted top priorities, next action, plan blocks, and focus status.
-2. **Task workspace** — capture, search, filter, complete, delete, and focus a task.
+2. **Task workspace** — rapid capture plus full task editing, owned dependencies, user-confirmed step breakdown, search/filter, completion/deletion, and focus on actionable tasks.
 3. **Planning studio** — plan input, draft generation, capacity/deferred explanation, approval, and recovery recalculation in the configured time zone.
 4. **Schedule & capacity** — IANA zone/working-window/recovery-cap settings and owned commitment CRUD with an explicit fixed/flexible distinction.
 5. **Focus studio** — session setup/control/history backed by the API.
@@ -120,11 +126,11 @@ The empty, error, loading, disabled, confirmation, and success states are part o
 
 ## Known architectural risks
 
-| Risk                                        | Current mitigation                                                        | Planned resolution                                                           |
-| ------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `node:sqlite` is experimental in Node 22    | Isolated behind one adapter; test database injection                      | Supported production driver/ORM in production hardening                      |
-| Local adapter is not a hosted deployment    | Auth/ownership/CSRF work in local mode, with explicit `/meta` disclosure  | Production database, HTTPS/proxy, email, backup and monitoring configuration |
-| DST/local-time edge cases                   | Server validates IANA zones and rejects ambiguous/nonexistent local times | Broader time-zone/DST E2E coverage and explicit user disambiguation choices  |
-| Calendar is manual, not connected           | Owned local event CRUD and fixed-capacity subtraction are real            | External authorization/sync, recurrence, conflict guidance                   |
-| Whole-task scheduler cannot yet split tasks | Explicit capacity deferral instead of hidden overbooking                  | Task decomposition and user-approved splitting                               |
-| No optional LLM provider                    | Deterministic engine fully works alone                                    | Provider interface, timeout/privacy/schema controls                          |
+| Risk                                      | Current mitigation                                                                             | Planned resolution                                                              |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `node:sqlite` is experimental in Node 22  | Isolated behind one adapter; test database injection                                           | Supported production driver/ORM in production hardening                         |
+| Local adapter is not a hosted deployment  | Auth/ownership/CSRF work in local mode, with explicit `/meta` disclosure                       | Production database, HTTPS/proxy, email, backup and monitoring configuration    |
+| DST/local-time edge cases                 | Server validates IANA zones and rejects ambiguous/nonexistent local times                      | Broader time-zone/DST E2E coverage and explicit user disambiguation choices     |
+| Calendar is manual, not connected         | Owned local event CRUD and fixed-capacity subtraction are real                                 | External authorization/sync, recurrence, conflict guidance                      |
+| Breakdown metadata is local and one-level | Explicit user confirmation, atomic child creation, and parent exclusion prevent double-booking | Add recurrence/tags and, only if justified, richer hierarchy/plan-editing rules |
+| No optional LLM provider                  | Deterministic engine fully works alone                                                         | Provider interface, timeout/privacy/schema controls                             |
